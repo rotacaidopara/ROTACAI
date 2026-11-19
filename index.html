@@ -1,0 +1,2896 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#1b5e20" />
+  <title>Rotaçaí — Logística Fluvial em Barcarena-PA</title>
+  <meta name="description" content="Rotaçaí: logística fluvial do açaí em Barcarena-PA, com rotas só pelos rios." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E%F0%9F%9A%A2%3C/text%3E%3C/svg%3E" />
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet">
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <!-- Leaflet Map CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- MQTT.js para Conectividade Multi-Aparelhos em Tempo Real -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            acai: {
+              dark: '#4a148c',
+              primary: '#6a1b9a',
+              light: '#f3e5f5',
+              hover: '#380e6b'
+            },
+            forest: {
+              dark: '#1b5e20',
+              medium: '#2e7d32',
+              bright: '#43a047',
+              light: '#e8f5e9',
+              mint: '#dcedc8'
+            },
+            gold: {
+              soft: '#ffd54f',
+              amber: '#ffb300'
+            },
+            cream: '#fdfbf7'
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Plus Jakarta Sans', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background: radial-gradient(circle at top left, #e8f5e9 0%, #cfe5d4 50%, #b5cfbc 100%);
+      min-height: 100vh;
+      font-family: 'Inter', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .screen-enter {
+      animation: fadeSlideIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    #leaflet-map {
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+    .leaflet-control-attribution {
+      font-size: 9px !important;
+      background: rgba(255,255,255,0.82) !important;
+    }
+
+    .leaflet-control-zoom { border: none !important; box-shadow: 0 2px 8px rgba(0,0,0,0.25) !important; border-radius: 14px !important; overflow: hidden; }
+    .leaflet-control-zoom a { width: 36px !important; height: 36px !important; line-height: 36px !important; font-size: 20px !important; color: #1b5e20 !important; }
+    @keyframes sail{0%{left:-90px}100%{left:100%}}
+    @keyframes wave{to{transform:translateX(-50%)}}
+    @keyframes bob{from{transform:translateY(0)}to{transform:translateY(-3px)}}
+    .km-tip{font-weight:800;font-size:11px;background:#1b5e20;color:#fff;border:0;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+    .leaflet-tooltip-top.km-tip::before{border-top-color:#1b5e20}
+    @media print{body>*:not(#receipt){display:none!important}#receipt{position:static!important;background:#fff!important}.no-print{display:none!important}}
+    .boat-pulse {
+      animation: pulseRing 1.8s infinite;
+    }
+    @keyframes pulseRing {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(74, 20, 140, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(74, 20, 140, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(74, 20, 140, 0); }
+    }
+
+    /* =================== LAYOUT: CELULAR x COMPUTADOR =================== */
+    /* Celular / tablet pequeno: tela cheia, sem moldura de aparelho */
+    .app-shell { width: 100%; max-width: 640px; height: 100dvh; padding-top: env(safe-area-inset-top, 0px); }
+    #status-bar { display: none; }               /* o celular real já tem barra de status */
+    #app-toast { top: calc(env(safe-area-inset-top, 0px) + 12px); }
+    #admin-fab { bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); }
+
+    /* Computador: janela larga, mapa à esquerda e painel lateral à direita */
+    @media (min-width: 1024px) {
+      body { padding: 20px; }
+      .app-shell {
+        max-width: 1280px; height: calc(100vh - 40px); max-height: 920px; padding-top: 0;
+        border-radius: 28px; box-shadow: 0 28px 65px -12px rgba(27,94,32,.38), 0 0 0 1px rgba(27,94,32,.18);
+      }
+      #status-bar { display: flex; }
+      #app-toast { top: 40px; left: 50%; right: auto; width: 440px; margin-left: -220px; }
+      #screen-main { flex-direction: row !important; }
+      #main-map-wrap { order: 1; flex: 1 1 auto; min-width: 0; }
+      #main-panel { order: 2; width: 430px; max-height: none !important; height: 100%; border-radius: 0 !important;
+        border-top: 0; border-left: 1px solid #e5e7eb; box-shadow: -10px 0 30px rgba(0,0,0,.08) !important; padding: 22px; }
+      #main-header { right: 454px !important; }
+      #screen-login > *, #screen-auth > * { width: 100%; max-width: 460px; margin-left: auto; margin-right: auto; }
+      .screen-view:not(#screen-main):not(#screen-splash):not(#screen-login):not(#screen-auth) > * { width: 100%; max-width: 760px; margin-left: auto; margin-right: auto; }
+      #screen-splash > * { width: 100%; max-width: 1040px; margin-left: auto; margin-right: auto; }
+      #market-body { max-width: 1120px !important; }
+      #admin-body { max-width: 1040px !important; }
+      .mkt-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+    }
+    @media (min-width: 640px) and (max-width: 1023px) {
+      #market-body { max-width: 720px !important; }
+      .mkt-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    }
+
+    /* =================== CARROSSEL DE CATEGORIAS =================== */
+    .role-carousel { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+      padding: 10px 11% 18px; margin: 0 -24px; position: relative; scroll-behavior: smooth; touch-action: pan-x pan-y; cursor: grab; }
+    .role-carousel.dragging { scroll-snap-type: none; scroll-behavior: auto; cursor: grabbing; user-select: none; }
+    .role-card { flex: 0 0 min(76%, 290px); scroll-snap-align: center; border-radius: 28px; padding: 20px 18px 16px; color: #fff;
+      display: flex; flex-direction: column; gap: 10px; min-height: 268px; position: relative; overflow: hidden;
+      transform: scale(.92); opacity: .72; transition: transform .35s cubic-bezier(.16,1,.3,1), opacity .35s, box-shadow .35s;
+      box-shadow: 0 8px 18px -10px rgba(0,0,0,.35); }
+    .role-card.is-active { transform: scale(1); opacity: 1; box-shadow: 0 18px 32px -14px rgba(0,0,0,.5); }
+    .role-card::after { content: ""; position: absolute; width: 170px; height: 170px; border-radius: 50%; right: -60px; top: -60px; background: rgba(255,255,255,.1); }
+    .role-card .rc-ico { width: 54px; height: 54px; border-radius: 18px; background: rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center; font-size: 24px; }
+    .role-card .rc-btn { flex: 1; padding: 11px 8px; border-radius: 16px; font-size: 12px; font-weight: 800; text-align: center; transition: transform .15s; }
+    .role-card .rc-btn:active { transform: scale(.96); }
+    /* radar do entregador */
+    .radar-box { position: relative; height: 150px; border-radius: 20px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle, #1b0f33 0%, #0b1f12 100%); }
+    .radar-sweep { position: absolute; width: 320px; height: 320px; border-radius: 50%; background: conic-gradient(from 0deg, rgba(67,160,71,0) 0deg, rgba(67,160,71,.4) 60deg, rgba(67,160,71,0) 61deg); animation: radarSpin 3s linear infinite; }
+    .radar-ring { position: absolute; width: 40px; height: 40px; border-radius: 50%; border: 2px solid rgba(255,213,79,.75); animation: radarPing 2.4s ease-out infinite; }
+    .radar-ring:nth-of-type(2) { animation-delay: .8s; } .radar-ring:nth-of-type(3) { animation-delay: 1.6s; }
+    @keyframes radarSpin { to { transform: rotate(360deg); } }
+    @keyframes radarPing { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(4.2); opacity: 0; } }
+    .role-dot { width: 7px; height: 7px; border-radius: 999px; background: rgba(27,94,32,.25); transition: all .25s; }
+    .role-dot.on { width: 22px; background: #1b5e20; }
+    .role-arrow { display: none; }
+    @media (min-width: 1024px) {
+      .role-carousel { margin: 0; padding: 14px 4px 22px; justify-content: safe center; }
+      .role-card { flex-basis: 250px; transform: none; opacity: 1; }
+      .role-card.is-active { transform: translateY(-6px); }
+      .role-arrow { display: flex; }
+    }
+  </style>
+</head>
+<body class="flex flex-col lg:flex-row items-center justify-center p-0 sm:p-4 lg:p-6 gap-5">
+
+  <!-- ======================================================================= -->
+  <!-- PAINEL DE GRUPO MULTI-APARELHOS & CONTROLE DE DEMONSTRAÇÃO              -->
+  <!-- ======================================================================= -->
+  <aside id="control-sidebar" class="hidden w-full sm:max-w-[416px] lg:w-96 bg-white/95 backdrop-blur-md sm:rounded-3xl shadow-xl border border-forest-dark/15 p-4 z-40 transition-all">
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <span id="mqtt-status-dot" class="w-3 h-3 rounded-full bg-amber-400 animate-pulse"></span>
+        <div>
+          <h2 class="text-xs font-extrabold uppercase tracking-wider text-forest-dark">Rede Fluvial Barcarena</h2>
+          <p id="mqtt-status-text" class="text-[11px] text-gray-500">Conectando à rede fluvial...</p>
+        </div>
+      </div>
+      <button onclick="menuSuperior(false)" id="btn-toggle-sidebar" class="text-xs font-bold px-2.5 py-1.5 rounded-xl bg-forest-light text-forest-dark">
+        Fechar menu
+      </button>
+    </div>
+
+    <div id="control-sidebar-body" class="mt-3 space-y-3">
+      <!-- Sala Compartilhada -->
+      <div class="bg-forest-light/85 rounded-2xl p-3 border border-forest-dark/15 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-extrabold text-forest-dark uppercase">
+            <i class="fa-solid fa-users-rays mr-1"></i>Aparelhos conectados
+          </span>
+          <span id="group-total-badge" class="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-forest-dark text-white">
+            1 aparelho online
+          </span>
+        </div>
+
+        <div class="bg-white/90 rounded-xl p-2 border border-forest-dark/10 max-h-24 overflow-y-auto no-scrollbar space-y-1" id="group-peers-list">
+          <div class="flex items-center justify-between text-[11px]">
+            <span class="font-bold text-gray-800"><i class="fa-solid fa-mobile-screen text-forest-dark mr-1"></i>Você (Este aparelho)</span>
+            <span class="px-1.5 py-0.2 rounded bg-forest-light text-forest-dark text-[9px] font-extrabold">Online</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resumo do Estado -->
+      <div class="bg-gray-50 rounded-2xl p-2.5 text-[11px] text-gray-700 flex items-center justify-between border border-gray-200/80">
+        <div>
+          <span class="text-gray-500">Perfil:</span>
+          <strong id="sidebar-role-label" class="text-forest-dark ml-1">Produtor</strong>
+        </div>
+        <div>
+          <span class="text-gray-500">Maré:</span>
+          <strong class="text-blue-700 ml-1"><i class="fa-solid fa-water text-[10px]"></i> Enchente (2,4m)</strong>
+        </div>
+        <div>
+          <span class="text-gray-500">Status:</span>
+          <strong id="sidebar-ride-label" class="text-acai-dark ml-1">Livre</strong>
+        </div>
+      </div>
+
+      <!-- Alternância Rápida de Perfil -->
+      <div class="grid grid-cols-2 gap-1.5">
+        <button onclick="quickSwitchRole('produtor')" id="btn-role-produtor" class="py-2 px-2.5 rounded-xl bg-forest-dark text-white text-[11px] font-extrabold transition flex items-center justify-center gap-1.5 shadow-sm">
+          <i class="fa-solid fa-seedling"></i> Sou Produtor
+        </button>
+        <button onclick="quickSwitchRole('entregador')" id="btn-role-entregador" class="py-2 px-2.5 rounded-xl bg-acai-light hover:bg-acai-dark hover:text-white text-acai-dark text-[11px] font-extrabold transition flex items-center justify-center gap-1.5">
+          <i class="fa-solid fa-ship"></i> Sou Entregador
+        </button>
+      </div>
+
+      <!-- Atalhos de Telas -->
+      <div class="grid grid-cols-3 gap-1.5 pt-1 border-t border-gray-200">
+        <button onclick="navigateTo('splash')" class="py-1.5 px-2 rounded-lg bg-gray-100 hover:bg-forest-light text-[11px] font-semibold text-gray-700">Início</button>
+        <button onclick="navigateTo('login')" class="py-1.5 px-2 rounded-lg bg-gray-100 hover:bg-forest-light text-[11px] font-semibold text-gray-700">Login</button>
+        <button onclick="navigateTo('main')" class="py-1.5 px-2 rounded-lg bg-gray-100 hover:bg-forest-light text-[11px] font-semibold text-gray-700">Mapa Rio</button>
+        <button onclick="navigateTo('boat-setup')" class="py-1.5 px-2 rounded-lg bg-gray-100 hover:bg-forest-light text-[11px] font-semibold text-gray-700">Meu Barco</button>
+        <button onclick="navigateTo('weather')" class="py-1.5 px-2 rounded-lg bg-gray-100 hover:bg-forest-light text-[11px] font-semibold text-gray-700">Clima/Maré</button>
+        <button onclick="navigateTo('payment')" class="py-1.5 px-2 rounded-lg bg-gray-100 hover:bg-forest-light text-[11px] font-semibold text-gray-700">Pagamento</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ======================================================================= -->
+  <!-- MOLDURA DO SMARTPHONE                                                   -->
+  <!-- ======================================================================= -->
+  <main class="app-shell relative w-full bg-cream overflow-hidden flex flex-col">
+    
+    <!-- Barra de Status Superior -->
+    <div id="status-bar" class="h-7 px-5 flex items-center justify-between text-[11px] font-bold z-30 shrink-0 transition-colors bg-[#f4faf5] text-forest-dark">
+      <div class="flex items-center gap-1.5">
+        <span id="clock-display">09:41</span>
+      </div>
+      <div class="hidden sm:block w-24 h-4 bg-[#142417] rounded-b-2xl -mt-1"></div>
+      <div class="flex items-center gap-1.5">
+        <span id="mini-peers-pill" class="text-[9px] font-extrabold bg-forest-dark text-white px-1.5 rounded-full">1 online</span>
+        <i class="fa-solid fa-wifi text-[10px]"></i>
+        <i class="fa-solid fa-battery-full text-[11px]"></i>
+      </div>
+    </div>
+
+    <!-- TOAST NOTIFICAÇÃO -->
+    <div id="app-toast" class="pointer-events-none opacity-0 transition-all duration-300 transform -translate-y-2 absolute left-3 right-3 z-[70] bg-forest-dark text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 text-xs font-semibold border border-white/20">
+      <i id="toast-icon" class="fa-solid fa-circle-check text-gold-soft text-base"></i>
+      <span id="toast-text" class="flex-1">Notificação Rotaçaí</span>
+    </div>
+
+    <!-- MODAL DE CHAMADA DE CORRIDA (ENTREGADOR) -->
+    <div id="incoming-call-modal" class="hidden absolute inset-0 z-[95] bg-forest-dark/95 backdrop-blur-md flex flex-col justify-between p-6 text-white screen-enter">
+      <div class="text-center pt-4">
+        <span class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-gold-soft text-forest-dark text-xs font-extrabold uppercase tracking-wider animate-bounce">
+          <i class="fa-solid fa-bell"></i> Nova Coleta de Açaí!
+        </span>
+        <h2 class="text-2xl font-extrabold mt-3">Chamado Fluvial Próximo</h2>
+        <p id="call-modal-sender" class="text-xs text-forest-mint mt-1">Solicitado por Produtor Ribeirinho</p>
+      </div>
+
+      <div class="bg-white text-gray-900 rounded-3xl p-5 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+          <div>
+            <span class="text-[10px] font-bold uppercase text-gray-400">Valor do Frete</span>
+            <div id="call-modal-price" class="text-3xl font-extrabold text-acai-dark">R$ 165,00</div>
+          </div>
+          <div class="text-right">
+            <span class="px-2.5 py-1 rounded-xl bg-forest-light text-forest-dark text-xs font-extrabold" id="call-modal-tonnage">140 paneiros (2,0t)</span>
+            <div id="call-modal-distance" class="text-xs font-bold text-gray-500 mt-1">8,5 km pelo rio</div>
+          </div>
+        </div>
+
+        <div class="space-y-3 text-xs">
+          <div class="flex items-start gap-2.5">
+            <div class="w-6 h-6 rounded-full bg-forest-light text-forest-dark flex items-center justify-center shrink-0 mt-0.5">
+              <i class="fa-solid fa-anchor"></i>
+            </div>
+            <div>
+              <span class="block text-[10px] font-bold uppercase text-gray-400">Coleta (Porto ou Margem do Rio)</span>
+              <strong id="call-modal-origin" class="text-sm text-gray-900">Comunidade São Pedro (Rio Arapari)</strong>
+            </div>
+          </div>
+          <div class="flex items-start gap-2.5">
+            <div class="w-6 h-6 rounded-full bg-acai-light text-acai-dark flex items-center justify-center shrink-0 mt-0.5">
+              <i class="fa-solid fa-flag-checkered"></i>
+            </div>
+            <div>
+              <span class="block text-[10px] font-bold uppercase text-gray-400">Porto de Destino Final</span>
+              <strong id="call-modal-dest" class="text-sm text-gray-900">Porto Central de Barcarena (Feira)</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <div class="flex justify-between text-[11px] font-bold text-gray-500">
+            <span>Tempo para aceitar</span>
+            <span id="call-countdown-text" class="text-acai-dark">25s</span>
+          </div>
+          <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div id="call-countdown-bar" class="h-full bg-acai-dark transition-all duration-1000" style="width: 100%"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3 pb-4">
+        <button onclick="rejectIncomingRide()" class="col-span-1 py-4 rounded-2xl bg-red-600/90 hover:bg-red-600 text-white font-extrabold text-sm shadow-lg flex flex-col items-center justify-center gap-1 transition">
+          <i class="fa-solid fa-xmark text-lg"></i>
+          <span class="text-xs">Recusar</span>
+        </button>
+        <button onclick="acceptIncomingRide()" class="col-span-2 py-4 rounded-2xl bg-forest-bright hover:bg-green-500 text-white font-extrabold text-base shadow-xl flex items-center justify-center gap-2.5 transition transform active:scale-95">
+          <i class="fa-solid fa-check-circle text-xl"></i>
+          <span>ACEITAR VIAGEM</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- MODAL DE AVALIAÇÃO 5 ESTRELAS -->
+    <div id="rating-modal" class="hidden absolute inset-0 z-50 bg-forest-dark/95 backdrop-blur-md flex flex-col justify-between p-6 text-white screen-enter">
+      <div class="text-center pt-5">
+        <span class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-gold-soft text-forest-dark text-xs font-extrabold uppercase tracking-wider">
+          <i class="fa-solid fa-circle-check"></i> Entrega Concluída no Porto!
+        </span>
+        <h2 class="text-2xl font-extrabold mt-3">Avalie a Viagem Fluvial</h2>
+        <p id="rating-partner-subtitle" class="text-xs text-forest-mint mt-1">Como foi o transporte com B/M Açaí Forte I?</p>
+      </div>
+
+      <div class="bg-white text-gray-900 rounded-3xl p-5 shadow-2xl space-y-4 text-center">
+        <div class="w-16 h-16 rounded-full bg-forest-light text-forest-dark text-2xl flex items-center justify-center mx-auto shadow-inner">
+          <i class="fa-solid fa-ship"></i>
+        </div>
+        <div>
+          <strong id="rating-partner-name" class="text-base font-extrabold text-gray-900 block">Mestre Raimundo • B/M Açaí Forte I</strong>
+          <span id="rating-route-summary" class="text-[11px] text-gray-500">São Pedro ➔ Porto Central de Barcarena</span>
+        </div>
+
+        <div class="flex justify-center gap-2.5 text-3xl py-1">
+          <i class="fa-solid fa-star cursor-pointer hover:scale-110 transition text-amber-400" onclick="setRating(1)" id="star-1"></i>
+          <i class="fa-solid fa-star cursor-pointer hover:scale-110 transition text-amber-400" onclick="setRating(2)" id="star-2"></i>
+          <i class="fa-solid fa-star cursor-pointer hover:scale-110 transition text-amber-400" onclick="setRating(3)" id="star-3"></i>
+          <i class="fa-solid fa-star cursor-pointer hover:scale-110 transition text-amber-400" onclick="setRating(4)" id="star-4"></i>
+          <i class="fa-solid fa-star cursor-pointer hover:scale-110 transition text-amber-400" onclick="setRating(5)" id="star-5"></i>
+        </div>
+        <div id="rating-label-text" class="text-xs font-extrabold text-acai-dark">5.0 — Excelente! Carga intacta e pontual</div>
+        <input type="hidden" id="selected-rating-value" value="5">
+
+        <div class="flex flex-wrap justify-center gap-1.5 text-[10px] font-bold">
+          <button type="button" onclick="toggleRatingTag(this)" class="px-2.5 py-1 rounded-full bg-forest-light text-forest-dark border border-forest-dark/20">Pontual no porto</button>
+          <button type="button" onclick="toggleRatingTag(this)" class="px-2.5 py-1 rounded-full bg-forest-light text-forest-dark border border-forest-dark/20">Cuidado com paneiros</button>
+          <button type="button" onclick="toggleRatingTag(this)" class="px-2.5 py-1 rounded-full bg-forest-light text-forest-dark border border-forest-dark/20">Navegação segura</button>
+        </div>
+
+        <textarea id="rating-comment" placeholder="Escreva um comentário opcional sobre a entrega..." class="w-full h-20 p-3 rounded-2xl bg-gray-50 border border-gray-200 text-xs text-gray-800 focus:outline-none focus:border-forest-dark resize-none"></textarea>
+
+        <button onclick="submitRating()" class="w-full py-3.5 rounded-2xl bg-forest-dark hover:bg-forest-medium text-white font-extrabold text-sm shadow-lg transition">
+          Confirmar Avaliação
+        </button>
+      </div>
+
+      <div class="text-center pb-3 text-[11px] text-forest-mint">
+        Rotaçaí Barcarena-PA • Agricultura Familiar Conectada
+      </div>
+    </div>
+
+    <!-- NOVO MODAL DE ESCOLHA DE PAGAMENTO (ENTREGADOR/PRODUTOR) -->
+    <div id="payment-method-modal" class="hidden absolute inset-0 z-50 bg-forest-dark/95 backdrop-blur-md flex flex-col justify-between p-6 text-white screen-enter">
+      <div class="text-center pt-4">
+        <span class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-gold-soft text-forest-dark text-xs font-extrabold uppercase tracking-wider">
+          <i class="fa-solid fa-file-invoice-dollar"></i> Carga Entregue no Porto!
+        </span>
+        <h2 class="text-2xl font-extrabold mt-3">Solicitação de Pagamento</h2>
+        <p class="text-xs text-forest-mint mt-1">Selecione a forma de pagamento do frete fluvial</p>
+      </div>
+
+      <div class="bg-white text-gray-900 rounded-3xl p-5 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+          <div>
+            <span class="text-[10px] font-bold uppercase text-gray-400">Total a Pagar</span>
+            <div id="payment-modal-price" class="text-3xl font-extrabold text-acai-dark">R$ 135,00</div>
+          </div>
+          <div class="text-right">
+            <span class="px-2.5 py-1 rounded-xl bg-forest-light text-forest-dark text-xs font-extrabold" id="payment-modal-cargo">80 paneiros</span>
+            <div class="text-xs font-bold text-gray-500 mt-1">Acerto no Desembarque</div>
+          </div>
+        </div>
+
+        <span class="block text-[11px] font-extrabold uppercase text-gray-600">Escolha a Forma de Pagamento</span>
+        
+        <div class="grid grid-cols-2 gap-2.5">
+          <button type="button" onclick="selectPaymentMethod('Dinheiro')" id="pm-Dinheiro" class="payment-option-btn p-3 rounded-2xl border-2 border-forest-dark/20 bg-forest-light/40 hover:bg-forest-light text-forest-dark text-left transition flex flex-col gap-1">
+            <i class="fa-solid fa-money-bill-wave text-lg"></i>
+            <strong class="text-xs font-extrabold">Dinheiro</strong>
+            <span class="text-[9px] text-gray-500">Espécie no porto</span>
+          </button>
+          
+          <button type="button" onclick="selectPaymentMethod('Pix')" id="pm-Pix" class="payment-option-btn p-3 rounded-2xl border-2 border-acai-dark bg-acai-light/40 hover:bg-acai-light text-acai-dark text-left transition flex flex-col gap-1 shadow-sm">
+            <i class="fa-solid fa-qrcode text-lg"></i>
+            <strong class="text-xs font-extrabold">PIX Fluvial</strong>
+            <span class="text-[9px] text-gray-500">Instantâneo / QR Code</span>
+          </button>
+
+          <button type="button" onclick="selectPaymentMethod('Cartão de Crédito')" id="pm-Cartão de Crédito" class="payment-option-btn p-3 rounded-2xl border-2 border-forest-dark/20 bg-gray-50 hover:bg-gray-100 text-gray-800 text-left transition flex flex-col gap-1">
+            <i class="fa-solid fa-credit-card text-lg text-blue-600"></i>
+            <strong class="text-xs font-extrabold">Cartão de Crédito</strong>
+            <span class="text-[9px] text-gray-500">Maquininha no barco</span>
+          </button>
+
+          <button type="button" onclick="selectPaymentMethod('Cartão de Débito')" id="pm-Cartão de Débito" class="payment-option-btn p-3 rounded-2xl border-2 border-forest-dark/20 bg-gray-50 hover:bg-gray-100 text-gray-800 text-left transition flex flex-col gap-1">
+            <i class="fa-solid fa-wallet text-lg text-green-600"></i>
+            <strong class="text-xs font-extrabold">Cartão de Débito</strong>
+            <span class="text-[9px] text-gray-500">Maquininha no barco</span>
+          </button>
+        </div>
+        <input type="hidden" id="selected-payment-method" value="Pix">
+      </div>
+
+      <button onclick="confirmPaymentAndUnlockRating()" class="w-full py-4 rounded-2xl bg-forest-bright hover:bg-green-500 text-white font-extrabold text-base shadow-xl transition flex items-center justify-center gap-2 transform active:scale-95 mb-2">
+        <i class="fa-solid fa-check-circle text-xl"></i>
+        <span>CONFIRMAR PAGAMENTO E LIBERAR AVALIAÇÃO</span>
+      </button>
+    </div>
+
+    <!-- CONTAINER DAS TELAS -->
+    <div id="screens-container" class="flex-1 relative overflow-hidden flex flex-col">
+
+      <!-- ========================================================= -->
+      <!-- TELA 1: INÍCIO / SPLASH                                   -->
+      <!-- ========================================================= -->
+      <section id="screen-splash" class="screen-view flex-1 flex flex-col justify-between bg-gradient-to-b from-[#f4faf5] via-[#fdfbf7] to-[#e4f0e6] overflow-y-auto no-scrollbar p-6">
+        <div class="w-full text-center">
+          <div class="relative w-full h-24 overflow-hidden rounded-2xl bg-gradient-to-b from-sky-100 to-blue-200 border border-blue-200">
+            <div class="absolute" style="bottom:14px;animation:sail 4s linear infinite">
+              <svg width="90" height="48" viewBox="0 0 90 48" style="animation:bob 1s ease-in-out infinite alternate">
+                <circle cx="16" cy="20" r="8" fill="#4a148c"/><circle cx="32" cy="20" r="8" fill="#4a148c"/><circle cx="46" cy="22" r="7" fill="#6a1b9a"/>
+                <rect x="58" y="12" width="20" height="16" fill="#fff" stroke="#1b5e20" stroke-width="2"/><rect x="55" y="8" width="26" height="5" fill="#1b5e20"/>
+                <path d="M4 28 L86 28 L76 44 L14 44 Z" fill="#6d4c41"/>
+              </svg>
+            </div>
+            <svg viewBox="0 0 400 20" preserveAspectRatio="none" style="position:absolute;bottom:0;left:0;width:200%;height:24px;animation:wave 3s linear infinite"><path d="M0 10 Q25 0 50 10 T100 10 T150 10 T200 10 T250 10 T300 10 T350 10 T400 10 V20 H0Z" fill="#3b82c4"/></svg>
+          </div>
+          <p id="splash-greeting" class="mt-3 text-2xl font-extrabold text-forest-dark"></p>
+          <p class="text-xs text-gray-500">Bem-vindo(a) ao Rotaçaí</p>
+        </div>
+        <div class="flex flex-col items-center text-center pt-4">
+          <!-- Logo SVG Completo Barco + Cacho de Açaí -->
+          <div class="w-56 h-36 flex items-center justify-center">
+            <svg viewBox="0 0 320 195" class="w-full h-full drop-shadow-sm">
+              <path d="M 75 72 C 115 16, 225 8, 260 55 C 272 72, 268 95, 252 108" fill="none" stroke="#689f38" stroke-width="6" stroke-linecap="round"/>
+              <g transform="translate(242, 12)">
+                <path d="M18 0 C8 0 0 8 0 18 C0 31 18 46 18 46 C18 46 36 31 36 18 C36 8 28 0 18 0 Z" fill="#4A148C"/>
+                <circle cx="18" cy="17" r="7" fill="#ffffff"/>
+              </g>
+              <path d="M 65 82 C 35 60, 28 35, 45 25 C 62 35, 72 58, 65 82 Z" fill="#558b2f"/>
+              <path d="M 82 75 C 68 42, 75 18, 92 14 C 102 32, 98 56, 82 75 Z" fill="#689f38"/>
+              <!-- Cacho de Açaí -->
+              <g transform="translate(38, 72)">
+                <circle cx="14" cy="14" r="9" fill="#4A148C"/>
+                <circle cx="30" cy="12" r="9" fill="#6A1B9A"/>
+                <circle cx="22" cy="26" r="10" fill="#380E6B"/>
+                <circle cx="10" cy="34" r="8.5" fill="#6A1B9A"/>
+                <circle cx="34" cy="34" r="8.5" fill="#4A148C"/>
+                <circle cx="22" cy="44" r="9" fill="#4A148C"/>
+              </g>
+              <!-- Barco Regional -->
+              <g transform="translate(105, 34)">
+                <rect x="34" y="34" width="66" height="24" rx="5" fill="#ffffff" stroke="#1B5E20" stroke-width="3"/>
+                <rect x="44" y="40" width="14" height="10" rx="2" fill="#81C784"/>
+                <rect x="64" y="40" width="14" height="10" rx="2" fill="#81C784"/>
+                <rect x="84" y="40" width="10" height="10" rx="2" fill="#81C784"/>
+                <path d="M 28 34 L 106 34 L 100 26 L 34 26 Z" fill="#2E7D32"/>
+                <path d="M 8 68 L 138 56 L 122 82 L 18 88 Z" fill="#1B5E20"/>
+                <path d="M 11 63 L 136 51 L 138 56 L 8 68 Z" fill="#FFD54F"/>
+              </g>
+              <!-- Ondas do Rio Pará -->
+              <path d="M 35 142 Q 95 128, 160 142 T 285 142" fill="none" stroke="#2E7D32" stroke-width="5" stroke-linecap="round"/>
+              <path d="M 55 156 Q 115 144, 175 156 T 270 156" fill="none" stroke="#66BB6A" stroke-width="4" stroke-linecap="round"/>
+            </svg>
+          </div>
+
+          <span class="px-3 py-1 rounded-full bg-acai-light text-acai-dark text-[11px] font-extrabold uppercase tracking-wider mt-1">
+            Barcarena • Pará • Amazônia
+          </span>
+          <h1 class="font-display text-3xl font-extrabold text-forest-dark mt-2 tracking-tight">
+            Rota<span class="text-acai-dark">çaí</span>
+          </h1>
+          <p class="text-xs text-gray-600 mt-1.5 max-w-[280px] leading-relaxed">
+            Conectando produtores ribeirinhos aos barcos regionais para escoar o açaí com rapidez, segurança e preço justo.
+          </p>
+        </div>
+
+        <!-- Cards de Escolha Rápida (carrossel deslizável) -->
+        <div class="my-2">
+          <p class="text-center text-[11px] font-extrabold uppercase tracking-wider text-forest-dark/70 mt-3"><i class="fa-solid fa-hand-pointer mr-1"></i>Deslize e escolha sua categoria</p>
+          <div class="relative">
+            <button type="button" id="role-prev" aria-label="Anterior" class="role-arrow absolute left-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white shadow-lg border border-forest-dark/15 text-forest-dark items-center justify-center"><i class="fa-solid fa-chevron-left"></i></button>
+            <div id="role-carousel" class="role-carousel no-scrollbar" tabindex="0" aria-label="Categorias de acesso">
+              <article class="role-card" data-role="produtor" style="background:linear-gradient(150deg,#1b5e20,#43a047)">
+                <div class="rc-ico"><i class="fa-solid fa-seedling"></i></div>
+                <div class="flex-1">
+                  <strong class="block font-display text-lg font-extrabold leading-tight">Produtor Ribeirinho</strong>
+                  <span class="block text-[12px] mt-1.5 leading-snug text-white/85">Chame barcos para buscar seus paneiros de açaí no trapiche.</span>
+                </div>
+                <span class="text-[10px] font-bold text-white/70">Cargas • Fretes</span>
+                <div class="flex gap-2 relative z-10">
+                  <button type="button" onclick="startAsRole('produtor')" class="rc-btn bg-white text-forest-dark">Entrar</button>
+                  <button type="button" onclick="startRegister('produtor')" class="rc-btn bg-white/15 text-white border border-white/40">Cadastrar</button>
+                </div>
+              </article>
+              <article class="role-card" data-role="entregador" style="background:linear-gradient(150deg,#380e6b,#7b2cbf)">
+                <div class="rc-ico"><i class="fa-solid fa-ship"></i></div>
+                <div class="flex-1">
+                  <strong class="block font-display text-lg font-extrabold leading-tight">Comandante / Barqueiro</strong>
+                  <span class="block text-[12px] mt-1.5 leading-snug text-white/85">Receba fretes fluviais na região de Barcarena e ganhe por viagem.</span>
+                </div>
+                <span class="text-[10px] font-bold text-white/70">Rotas • Ganhos</span>
+                <div class="flex gap-2 relative z-10">
+                  <button type="button" onclick="startAsRole('entregador')" class="rc-btn bg-white text-acai-dark">Entrar</button>
+                  <button type="button" onclick="startRegister('entregador')" class="rc-btn bg-white/15 text-white border border-white/40">Cadastrar</button>
+                </div>
+              </article>
+              <article class="role-card" data-role="vendedor" style="background:linear-gradient(150deg,#b45309,#f59e0b)">
+                <div class="rc-ico"><i class="fa-solid fa-store"></i></div>
+                <div class="flex-1">
+                  <strong class="block font-display text-lg font-extrabold leading-tight">Comerciante de Açaí</strong>
+                  <span class="block text-[12px] mt-1.5 leading-snug text-white/85">Anuncie seu açaí no Comércio do Açaí e receba pelas vendas.</span>
+                </div>
+                <span class="text-[10px] font-bold text-white/70">Anúncios • Vendas</span>
+                <div class="flex gap-2 relative z-10">
+                  <button type="button" onclick="startAsRole('vendedor')" class="rc-btn bg-white text-amber-800">Entrar</button>
+                  <button type="button" onclick="startRegister('vendedor')" class="rc-btn bg-white/15 text-white border border-white/40">Cadastrar</button>
+                </div>
+              </article>
+              <article class="role-card" data-role="comprador" style="background:linear-gradient(150deg,#075985,#0d9488)">
+                <div class="rc-ico"><i class="fa-solid fa-basket-shopping"></i></div>
+                <div class="flex-1">
+                  <strong class="block font-display text-lg font-extrabold leading-tight">Cliente</strong>
+                  <span class="block text-[12px] mt-1.5 leading-snug text-white/85">Compre açaí direto de produtores e comerciantes da região.</span>
+                </div>
+                <span class="text-[10px] font-bold text-white/70">Compras • Pix</span>
+                <div class="flex gap-2 relative z-10">
+                  <button type="button" onclick="startAsRole('comprador')" class="rc-btn bg-white text-sky-900">Entrar</button>
+                  <button type="button" onclick="startRegister('comprador')" class="rc-btn bg-white/15 text-white border border-white/40">Cadastrar</button>
+                </div>
+              </article>
+            </div>
+            <button type="button" id="role-next" aria-label="Próximo" class="role-arrow absolute right-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white shadow-lg border border-forest-dark/15 text-forest-dark items-center justify-center"><i class="fa-solid fa-chevron-right"></i></button>
+          </div>
+          <div id="role-dots" class="flex justify-center gap-1.5 -mt-1"></div>
+        </div>
+
+        <div class="space-y-2 pb-2">
+          <button onclick="navigateTo('main')" class="w-full py-3.5 rounded-2xl bg-forest-dark hover:bg-forest-medium text-white font-extrabold text-sm shadow-lg transition flex items-center justify-center gap-2">
+            <i class="fa-solid fa-compass"></i> Entrar Direto no Mapa Fluvial
+          </button>
+          <button onclick="navigateTo('login')" class="w-full py-2.5 rounded-2xl bg-transparent hover:bg-black/5 text-forest-dark font-bold text-xs transition">
+            Já tenho cadastro • Entrar com Celular e PIN
+          </button>
+        </div>
+        <div class="mt-1 pt-2 border-t border-gray-200/70 text-center text-[8px] leading-tight text-gray-400">© 2026 Rotaçaí • Aplicativo criado por <b>Marcos Paulo DEV</b> — apps e sites<br>Contato: <a href="https://wa.me/5591984939822" target="_blank" rel="noopener" class="underline">(91) 98493-9822</a></div>
+      </section>
+
+      <!-- ========================================================= -->
+      <!-- TELA 2: LOGIN / CADASTRO RÁPIDO                           -->
+      <!-- ========================================================= -->
+      <section id="screen-login" class="screen-view hidden flex-1 flex flex-col justify-between bg-cream overflow-y-auto no-scrollbar p-6">
+        <div>
+          <button onclick="navigateTo('splash')" class="w-9 h-9 rounded-xl bg-forest-light text-forest-dark flex items-center justify-center mb-4"><i class="fa-solid fa-arrow-left"></i></button>
+          <h2 class="text-2xl font-extrabold text-gray-900">Entrar</h2>
+          <p class="text-xs text-gray-500 mt-1">Use seu celular e o PIN de 4 dígitos.</p>
+          <div class="mt-5 space-y-3.5">
+            <div><label class="block text-[11px] font-extrabold uppercase text-gray-600 mb-1">Celular (com DDD)</label>
+              <input type="tel" id="login-phone" placeholder="(91) 9XXXX-XXXX" class="w-full px-4 py-3 rounded-2xl bg-white border border-gray-200 text-sm font-bold" /></div>
+            <div><label class="block text-[11px] font-extrabold uppercase text-gray-600 mb-1">PIN de 4 dígitos</label>
+              <input type="password" id="login-pin" inputmode="numeric" maxlength="4" placeholder="••••" class="w-full px-4 py-3 rounded-2xl bg-white border border-gray-200 text-sm font-bold tracking-[0.5em]" /></div>
+          </div>
+        </div>
+        <div class="pt-4 space-y-2">
+          <button onclick="loginUser()" class="w-full py-3.5 rounded-2xl bg-forest-dark text-white font-extrabold text-sm shadow-lg">Entrar</button>
+          <button onclick="navigateTo('auth')" class="w-full py-2.5 text-forest-dark font-bold text-xs">Não tenho conta — Cadastrar</button>
+        </div>
+      </section>
+
+      <section id="screen-auth" class="screen-view hidden flex-1 flex flex-col justify-between bg-cream overflow-y-auto no-scrollbar p-6">
+        <div>
+          <button onclick="navigateTo('splash')" class="w-9 h-9 rounded-xl bg-forest-light text-forest-dark flex items-center justify-center mb-4">
+            <i class="fa-solid fa-arrow-left"></i>
+          </button>
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-acai-dark">Identificação na Rede</span>
+          <h2 class="text-2xl font-extrabold text-gray-900 mt-1">Criar Conta</h2>
+          <p class="text-xs text-gray-500 mt-1">Seu nome aparecerá para os barcos e produtores da sala.</p>
+
+          <div class="mt-5 space-y-3.5">
+            <div>
+              <label class="block text-[11px] font-extrabold uppercase text-gray-600 mb-1">Seu Nome ou Apelido no Rio</label>
+              <input type="text" id="auth-name-input" placeholder="Seu nome" class="w-full px-4 py-3 rounded-2xl bg-white border border-gray-200 text-xs font-bold text-gray-800 focus:outline-none focus:border-forest-dark" />
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-extrabold uppercase text-gray-600 mb-1">Comunidade / Porto Base</label>
+              <select id="auth-community-select" class="w-full px-4 py-3 rounded-2xl bg-white border border-gray-200 text-xs font-bold text-gray-800 focus:outline-none focus:border-forest-dark">
+                <option value="Comunidade São Pedro (Rio Arapari)">Comunidade São Pedro (Rio Arapari)</option>
+                <option value="Ilha das Onças / Furo Grande">Ilha das Onças / Furo Grande</option>
+                <option value="Ilha Trambioca (Barcarena)">Ilha Trambioca (Barcarena)</option>
+                <option value="Porto Central de Barcarena (Feira)">Porto Central de Barcarena (Feira)</option>
+                <option value="Porto de Vila do Conde">Porto de Vila do Conde</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-extrabold uppercase text-gray-600 mb-1">WhatsApp / Telefone</label>
+              <input type="tel" id="auth-phone-input" placeholder="(91) 9XXXX-XXXX" class="w-full px-4 py-3 rounded-2xl bg-white border border-gray-200 text-xs font-bold text-gray-800 focus:outline-none focus:border-forest-dark" />
+            </div>
+
+            <div><label class="block text-[11px] font-extrabold uppercase text-gray-600 mb-1">Tipo de conta</label>
+              <select id="auth-role-select" class="w-full px-4 py-3 rounded-2xl bg-white border border-gray-200 text-xs font-bold text-gray-800">
+                <option value="produtor">Produtor ribeirinho</option><option value="entregador">Entregador / barqueiro</option>
+                <option value="vendedor">Comerciante de açaí (vendedor)</option><option value="comprador">Cliente (comprador de açaí)</option>
+              </select></div>
+            <div class="grid grid-cols-2 gap-2">
+              <div><label class="block text-[11px] font-extrabold uppercase text-gray-600 mb-1">PIN (4 dígitos)</label>
+                <input type="password" id="auth-pin-input" inputmode="numeric" maxlength="4" class="w-full px-4 py-3 rounded-2xl bg-white border border-gray-200 text-sm font-bold tracking-[0.4em]" /></div>
+              <div><label class="block text-[11px] font-extrabold uppercase text-gray-600 mb-1">Repetir PIN</label>
+                <input type="password" id="auth-pin2-input" inputmode="numeric" maxlength="4" class="w-full px-4 py-3 rounded-2xl bg-white border border-gray-200 text-sm font-bold tracking-[0.4em]" /></div>
+            </div>
+            <div class="bg-forest-light/70 p-3.5 rounded-2xl border border-forest-dark/15 flex items-center gap-3">
+              <i class="fa-solid fa-shield-halved text-forest-dark text-lg"></i>
+              <p class="text-[11px] text-forest-dark leading-snug">
+                <strong>Modo Offline Ativado:</strong> Se perder o sinal nos furos, seus pedidos ficam salvos e enviam ao reconectar.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-4 space-y-2">
+          <button onclick="registerUser()" class="w-full py-3.5 rounded-2xl bg-forest-dark hover:bg-forest-medium text-white font-extrabold text-sm shadow-lg transition">Cadastrar</button>
+          <button onclick="navigateTo('login')" class="w-full py-2.5 text-forest-dark font-bold text-xs">Já tenho conta — Entrar</button>
+        </div>
+      </section>
+
+      <!-- ========================================================= -->
+      <!-- TELA 3: MAPA FLUVIAL PRINCIPAL (CORE DO APP)              -->
+      <!-- ========================================================= -->
+      <section id="screen-main" class="screen-view hidden flex-1 flex flex-col relative overflow-hidden">
+        
+        <!-- Header Flutuante sobre o Mapa -->
+        <div id="main-header" class="absolute top-3 left-3 right-3 z-20 flex items-center justify-between gap-2">
+          <div class="bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-2xl shadow-lg border border-forest-dark/10 flex items-center gap-2.5 flex-1">
+            <div id="header-role-badge" class="w-8 h-8 rounded-xl bg-forest-dark text-white flex items-center justify-center text-sm shrink-0">
+              <i class="fa-solid fa-seedling"></i>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-1.5">
+                <strong id="header-user-name" class="text-xs font-extrabold text-gray-900 truncate">Produtor Ribeirinho</strong>
+                <span class="w-2 h-2 rounded-full bg-green-500"></span>
+              </div>
+              <span id="header-role-sub" class="block text-[10px] text-gray-500 truncate">Barcarena-PA • Maré Enchente</span>
+            </div>
+          </div>
+
+          <button onclick="navigateTo('weather')" title="Clima e Tábua de Marés" class="w-10 h-10 rounded-2xl bg-white/95 backdrop-blur-md shadow-lg border border-blue-200 text-blue-700 flex items-center justify-center text-sm shrink-0 hover:bg-blue-50 transition">
+            <i class="fa-solid fa-water"></i>
+          </button>
+          <button id="btn-boat-setup" onclick="navigateTo('boat-setup')" title="Configurar Embarcação" class="w-10 h-10 rounded-2xl bg-white/95 backdrop-blur-md shadow-lg border border-acai-dark/15 text-acai-dark flex items-center justify-center text-sm shrink-0 hover:bg-acai-light transition">
+            <i class="fa-solid fa-ship"></i>
+          </button>
+        </div>
+
+        <!-- MAPA LEAFLET -->
+        <div id="main-map-wrap" class="flex-1 relative bg-[#cbe4f0]">
+          <div id="leaflet-map"></div>
+
+          <button id="btn-wallet" onclick="openWallet()" title="Meu saldo" class="absolute top-[72px] right-[92px] z-20 h-8 px-2.5 rounded-full bg-white/95 shadow-md border border-forest-dark/15 text-forest-dark text-[11px] font-extrabold flex items-center gap-1"><i class="fa-solid fa-wallet"></i><span id="wallet-amt">R$ 480,37</span></button>
+
+          <button id="btn-market" onclick="openMarket()" title="Comércio do Açaí" class="absolute top-[72px] right-[52px] z-20 w-8 h-8 rounded-full bg-white/95 shadow-md border border-forest-dark/15 text-acai-dark text-[13px] flex items-center justify-center"><i class="fa-solid fa-store"></i><span id="market-badge" class="hidden absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold items-center justify-center"></span></button>
+
+          <button id="btn-demo-bot" onclick="triggerDemoBotAction()" title="Pedir ao robô para executar a simulação completa" class="absolute top-[72px] right-3 z-20 w-8 h-8 rounded-full bg-white/95 shadow-md border border-forest-dark/15 text-forest-dark text-[13px] flex items-center justify-center"><i class="fa-solid fa-robot"></i></button>
+
+          <button id="water-status" onclick="retryWaterMap()" class="hidden absolute top-[72px] left-3 z-20 px-3 py-1.5 rounded-full bg-white/95 shadow-md border border-forest-dark/15 text-[10px] font-extrabold text-forest-dark items-center gap-1.5">
+          </button>
+          
+          <button onclick="recenterMap()" class="absolute bottom-[104px] right-3 z-20 w-9 h-9 rounded-xl bg-white shadow-md border border-gray-200 text-forest-dark flex items-center justify-center text-xs hover:bg-forest-light">
+            <i class="fa-solid fa-crosshairs"></i>
+          </button>
+        </div>
+
+        <!-- PAINEL INFERIOR DINÂMICO -->
+        <div id="main-panel" class="bg-white rounded-t-3xl shadow-[0_-10px_30px_rgba(0,0,0,0.12)] border-t border-gray-100 p-4 z-20 shrink-0 max-h-[54%] overflow-y-auto no-scrollbar">
+          
+          <!-- ESTADO A: PRODUTOR SOLICITANDO COLETA -->
+          <div id="panel-producer-idle" class="space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <span class="text-[10px] font-extrabold uppercase tracking-wider text-acai-dark">Novo Escoamento de Safra</span>
+                <h3 class="text-sm font-extrabold text-gray-900">Solicitar Barco Coletor</h3>
+              </div>
+              <span class="px-2.5 py-1 rounded-xl bg-forest-light text-forest-dark text-[10px] font-extrabold">
+                <i class="fa-solid fa-ship mr-1"></i><span id="boats-nearby-label">0 barcos no radar</span>
+              </span>
+            </div>
+
+            <div class="grid grid-cols-1 gap-2 text-xs">
+              <div class="bg-gray-50 p-2.5 rounded-2xl border border-gray-200/80 flex items-center gap-2.5">
+                <i class="fa-solid fa-anchor text-forest-dark"></i>
+                <div class="flex-1">
+                  <span class="block text-[9px] font-bold uppercase text-gray-400">Ponto de Coleta (Trapiche / Margem)</span>
+                  <select id="ride-origin-select" onchange="updateRoutePreview()" class="w-full bg-transparent font-extrabold text-gray-800 focus:outline-none text-xs">
+                    <option value="saopedro">Comunidade São Pedro (Rio Arapari)</option>
+                    <option value="oncas">Ilha das Onças (Furo Grande)</option>
+                    <option value="trambioca">Ilha Trambioca (Trapiche Norte)</option>
+                    <option value="cafezal">Rio Cafezal (Comunidade São João)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="bg-gray-50 p-2.5 rounded-2xl border border-gray-200/80 flex items-center gap-2.5">
+                <i class="fa-solid fa-flag-checkered text-acai-dark"></i>
+                <div class="flex-1">
+                  <span class="block text-[9px] font-bold uppercase text-gray-400">Porto de Destino em Barcarena</span>
+                  <select id="ride-dest-select" onchange="updateRoutePreview()" class="w-full bg-transparent font-extrabold text-gray-800 focus:outline-none text-xs">
+                    <option value="portocentral">Porto Central de Barcarena (Feira do Açaí)</option>
+                    <option value="viladoconde">Porto de Vila do Conde (Indústria/Exportação)</option>
+                    <option value="arapari">Porto do Arapari (Travessia / Escoamento)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-acai-light/50 p-3 rounded-2xl border border-acai-dark/15">
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="text-[11px] font-extrabold text-acai-dark">
+                  <i class="fa-solid fa-basket-shopping mr-1"></i>Volume da Carga (Paneiros / Latas 14kg)
+                </span>
+                <span id="cargo-weight-badge" class="text-[11px] font-extrabold text-forest-dark bg-white px-2 py-0.5 rounded-lg shadow-sm">
+                  80 paneiros • 1,12 ton
+                </span>
+              </div>
+              <input type="range" id="paneiros-slider" min="10" max="250" step="10" value="80" oninput="updateFreightCalculation()" class="w-full accent-acai-dark cursor-pointer" />
+              <div class="flex justify-between text-[9px] font-bold text-gray-500 mt-0.5">
+                <span>10 paneiros (140kg)</span>
+                <span>120 paneiros (1,68t)</span>
+                <span>250 paneiros (3,5t)</span>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between bg-forest-light/70 px-3.5 py-2.5 rounded-2xl border border-forest-dark/15">
+              <div>
+                <span class="block text-[10px] font-bold text-gray-500">Frete Estimado (<span id="route-km-label">8,5 km</span>)</span>
+                <strong id="estimated-price-label" class="text-xl font-extrabold text-acai-dark">R$ 135,00</strong>
+              </div>
+              <button onclick="requestAcaiRide()" class="px-5 py-3 rounded-2xl bg-forest-dark hover:bg-forest-medium text-white font-extrabold text-xs shadow-lg transition transform active:scale-95 flex items-center gap-2">
+                <i class="fa-solid fa-bullhorn"></i> CHAMAR BARCO
+              </button>
+            </div>
+          </div>
+
+          <!-- ESTADO B: ENTREGADOR ONLINE AGUARDANDO CHAMADOS -->
+          <div id="panel-driver-idle" class="hidden space-y-3">
+            <div class="flex items-center justify-between bg-acai-light p-3 rounded-2xl border border-acai-dark/15">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl bg-acai-dark text-white flex items-center justify-center text-lg">
+                  <i class="fa-solid fa-ship"></i>
+                </div>
+                <div>
+                  <strong id="driver-boat-title" class="text-xs font-extrabold text-gray-900 block">B/M Açaí Forte I (Cap. 4,0t)</strong>
+                  <span id="driver-status-sub" class="text-[11px] text-gray-500 font-bold">○ Offline • Radar fechado</span>
+                </div>
+              </div>
+              <button onclick="navigateTo('boat-setup')" class="px-2.5 py-1.5 rounded-xl bg-white text-acai-dark text-[10px] font-extrabold shadow-sm">Editar</button>
+            </div>
+
+            <div id="radar-off" class="space-y-2">
+              <button onclick="setRadar(true)" class="w-full py-4 rounded-2xl bg-acai-dark hover:bg-acai-hover text-white font-extrabold text-sm shadow-lg transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-satellite-dish text-lg"></i> ABRIR RADAR
+              </button>
+              <p class="text-center text-[11px] text-gray-500">Abra o radar para receber chamados de produtores. Você só recebe viagens, não solicita.</p>
+            </div>
+
+            <div id="radar-on" class="hidden space-y-2">
+              <div class="radar-box">
+                <div class="radar-sweep"></div><span class="radar-ring"></span><span class="radar-ring"></span><span class="radar-ring"></span>
+                <div class="relative w-11 h-11 rounded-full bg-gold-soft text-forest-dark flex items-center justify-center text-lg"><i class="fa-solid fa-ship"></i></div>
+              </div>
+              <p class="text-center text-xs font-extrabold text-acai-dark">Radar ativo • aguardando viagem…</p>
+              <p class="text-center text-[11px] text-gray-500">Mantenha o app aberto: o toque repete até você aceitar ou recusar.</p>
+              <button id="sound-banner" onclick="Alerts.test()" class="hidden w-full py-2.5 rounded-xl bg-amber-100 text-amber-900 text-xs font-extrabold border border-amber-300">🔊 Toque aqui para ativar o som e a vibração</button>
+              <div class="grid grid-cols-2 gap-2">
+                <button onclick="Alerts.test()" class="py-2.5 rounded-xl bg-gray-100 text-gray-700 text-[11px] font-extrabold">🔔 Testar som</button>
+                <button onclick="setRadar(false)" class="py-2.5 rounded-xl bg-red-50 text-red-600 text-[11px] font-extrabold border border-red-200">Fechar radar</button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 text-center">
+              <div class="bg-gray-50 p-2.5 rounded-2xl border border-gray-200/70">
+                <span class="block text-[10px] text-gray-500 font-bold">Viagens feitas</span>
+                <strong id="driver-trips-count" class="text-base font-extrabold text-forest-dark">0 viagens</strong>
+              </div>
+              <div class="bg-gray-50 p-2.5 rounded-2xl border border-gray-200/70">
+                <span class="block text-[10px] text-gray-500 font-bold">Saldo no caixa</span>
+                <strong id="driver-earnings-total" class="text-base font-extrabold text-acai-dark">R$ 0,00</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- ESTADO C: CORRIDA EM ANDAMENTO -->
+          <div id="panel-ride-active" class="hidden space-y-3">
+            <div class="flex items-center justify-between">
+              <span id="active-ride-badge" class="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-extrabold uppercase tracking-wider">
+                <i class="fa-solid fa-spinner fa-spin mr-1"></i>Aguardando Aceite...
+              </span>
+              <strong id="active-ride-price" class="text-base font-extrabold text-acai-dark">R$ 135,00</strong>
+            </div>
+
+            <div class="bg-forest-light/70 p-3 rounded-2xl border border-forest-dark/15 flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-10 h-10 rounded-2xl bg-forest-dark text-white flex items-center justify-center text-base">
+                  <i class="fa-solid fa-ship"></i>
+                </div>
+                <div>
+                  <strong id="active-ride-boat" class="text-xs font-extrabold text-gray-900 block">Buscando embarcação próxima...</strong>
+                  <span id="active-ride-route" class="text-[11px] text-gray-600">São Pedro ➔ Porto Central</span>
+                </div>
+              </div>
+              <div class="text-right">
+                <span id="active-ride-eta" class="block text-xs font-extrabold text-forest-dark">~18 min</span>
+                <span class="text-[9px] text-gray-500 font-bold">Tempo est.</span>
+              </div>
+            </div>
+
+            <div class="space-y-1">
+              <div class="flex justify-between text-[10px] font-bold text-gray-500">
+                <span id="nav-progress-label">Progresso no Rio</span>
+                <span id="nav-progress-pct">0%</span>
+              </div>
+              <div class="w-full h-2.5 bg-gray-200 rounded-full overflow-hidden">
+                <div id="nav-progress-bar" class="h-full bg-gradient-to-r from-forest-dark to-acai-dark transition-all duration-500" style="width: 5%"></div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="cancelActiveRide()" class="py-2.5 rounded-2xl bg-red-50 hover:bg-red-100 text-red-700 font-extrabold text-xs transition">
+                Cancelar Viagem
+              </button>
+              <button onclick="completeActiveRide()" class="py-2.5 rounded-2xl bg-forest-dark hover:bg-forest-medium text-white font-extrabold text-xs shadow transition flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-flag-checkered"></i> Concluir no Porto
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================================= -->
+      <!-- TELA 4: CONFIGURAÇÃO DA EMBARCAÇÃO (ENTREGADOR)           -->
+      <!-- ========================================================= -->
+      <section id="screen-boat-setup" class="screen-view hidden flex-1 flex flex-col justify-between bg-cream overflow-y-auto no-scrollbar p-6">
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <button onclick="navigateTo('main')" class="w-9 h-9 rounded-xl bg-forest-light text-forest-dark flex items-center justify-center">
+              <i class="fa-solid fa-arrow-left"></i>
+            </button>
+            <span class="text-xs font-extrabold uppercase text-acai-dark">Cadastro Náutico</span>
+            <div class="w-9"></div>
+          </div>
+
+          <h2 class="text-xl font-extrabold text-gray-900">Minha Embarcação</h2>
+          <p class="text-xs text-gray-500 mt-1">Configure a capacidade em paneiros/toneladas para receber fretes compatíveis.</p>
+
+          <div class="mt-4 space-y-3">
+            <div>
+              <label class="block text-[11px] font-extrabold uppercase text-gray-600 mb-1">Nome do Barco / Rabeta</label>
+              <input type="text" id="boat-name-input" value="B/M Açaí Forte I" class="w-full px-4 py-3 rounded-2xl bg-white border border-gray-200 text-xs font-bold text-gray-800" />
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-extrabold uppercase text-gray-600 mb-1">Tipo de Embarcação</label>
+              <select id="boat-type-select" class="w-full px-4 py-3 rounded-2xl bg-white border border-gray-200 text-xs font-bold text-gray-800">
+                <option value="Barco Motor Regional (B/M)">Barco Motor Regional (B/M)</option>
+                <option value="Voadeira de Alumínio (Rápida)">Voadeira de Alumínio (Rápida)</option>
+                <option value="Canoa Motorizada / Rabeta">Canoa Motorizada / Rabeta (Furos estreitos)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-extrabold uppercase text-gray-600 mb-1">Capacidade Máxima de Carga</label>
+              <select id="boat-capacity-select" class="w-full px-4 py-3 rounded-2xl bg-white border border-gray-200 text-xs font-bold text-gray-800">
+                <option value="1,5t (100 paneiros)">1,5 toneladas (até 100 paneiros)</option>
+                <option value="4,0t (280 paneiros)" selected>4,0 toneladas (até 280 paneiros)</option>
+                <option value="8,0t (550 paneiros)">8,0 toneladas (até 550 paneiros)</option>
+              </select>
+            </div>
+
+            <div class="bg-acai-light/60 p-3.5 rounded-2xl border border-acai-dark/15 space-y-1.5">
+              <strong class="text-xs text-acai-dark block"><i class="fa-solid fa-certificate mr-1"></i>Itens de Segurança da Capitania (CPAOR)</strong>
+              <label class="flex items-center gap-2 text-xs text-gray-700 font-medium">
+                <input type="checkbox" checked class="accent-forest-dark"> Coletes salva-vidas homologados
+              </label>
+              <label class="flex items-center gap-2 text-xs text-gray-700 font-medium">
+                <input type="checkbox" checked class="accent-forest-dark"> Toldo / Lona térmica para proteção do açaí
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <button onclick="saveBoatSetup()" class="w-full py-3.5 rounded-2xl bg-acai-dark hover:bg-acai-hover text-white font-extrabold text-sm shadow-lg transition mt-4">
+          Salvar Embarcação e Ficar Online
+        </button>
+      </section>
+
+      <!-- ========================================================= -->
+      <!-- TELA 5: CLIMA & TÁBUA DE MARÉS (VILA DO CONDE/BARCARENA)  -->
+      <!-- ========================================================= -->
+      <section id="screen-weather" class="screen-view hidden flex-1 flex flex-col justify-between bg-gradient-to-b from-blue-900 via-blue-800 to-forest-dark text-white overflow-y-auto no-scrollbar p-6">
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <button onclick="navigateTo('main')" class="w-9 h-9 rounded-xl bg-white/15 text-white flex items-center justify-center">
+              <i class="fa-solid fa-arrow-left"></i>
+            </button>
+            <span class="text-xs font-extrabold uppercase tracking-wider text-gold-soft">Boletim Hidroviário</span>
+            <div class="w-9"></div>
+          </div>
+
+          <h2 class="text-xl font-extrabold">Clima & Maré • Barcarena</h2>
+          <p class="text-xs text-blue-200 mt-0.5">Referência: Porto de Vila do Conde & Baía do Marajó</p>
+
+          <div class="mt-4 bg-white/10 backdrop-blur-md rounded-3xl p-4 border border-white/15 space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <span class="text-[10px] uppercase font-bold text-blue-200">Situação Atual da Maré</span>
+                <strong class="text-2xl font-extrabold block text-gold-soft">MARÉ ENCHENTE</strong>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-blue-500/30 flex items-center justify-center text-2xl">
+                <i class="fa-solid fa-water"></i>
+              </div>
+            </div>
+            <p class="text-xs text-blue-100 leading-relaxed">
+              Excelente janela para entrada de barcos motores nos <strong>furos estreitos</strong> (Rio Arapari e Furo Grande) sem risco de encalhe.
+            </p>
+          </div>
+
+          <div class="mt-4 bg-white text-gray-900 rounded-3xl p-4 shadow-xl space-y-2.5">
+            <span class="text-[11px] font-extrabold uppercase text-gray-500 block">Tábua de Marés de Hoje</span>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div class="p-2.5 rounded-2xl bg-blue-50 border border-blue-100">
+                <span class="text-[10px] font-bold text-blue-700 block">Preia-mar (Alta)</span>
+                <strong class="text-sm font-extrabold">05:40 • 3,1m</strong>
+              </div>
+              <div class="p-2.5 rounded-2xl bg-amber-50 border border-amber-100">
+                <span class="text-[10px] font-bold text-amber-700 block">Baixa-mar (Seca)</span>
+                <strong class="text-sm font-extrabold">11:55 • 0,6m</strong>
+              </div>
+              <div class="p-2.5 rounded-2xl bg-blue-50 border border-blue-100">
+                <span class="text-[10px] font-bold text-blue-700 block">Preia-mar (Alta)</span>
+                <strong class="text-sm font-extrabold">18:10 • 3,3m</strong>
+              </div>
+              <div class="p-2.5 rounded-2xl bg-gray-50 border border-gray-200">
+                <span class="text-[10px] font-bold text-gray-600 block">Vento / Banzeiro</span>
+                <strong class="text-sm font-extrabold text-forest-dark">14 km/h • Calmo</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button onclick="navigateTo('main')" class="w-full py-3.5 rounded-2xl bg-gold-soft text-forest-dark font-extrabold text-sm shadow-lg mt-4">
+          Voltar para o Mapa Fluvial
+        </button>
+      </section>
+
+      <!-- ========================================================= -->
+      <!-- TELA 6: PAGAMENTO PIX FLUVIAL                             -->
+      <!-- ========================================================= -->
+      <section id="screen-payment" class="screen-view hidden flex-1 flex flex-col justify-between bg-cream overflow-y-auto no-scrollbar p-6">
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <button onclick="navigateTo('main')" class="w-9 h-9 rounded-xl bg-forest-light text-forest-dark flex items-center justify-center">
+              <i class="fa-solid fa-arrow-left"></i>
+            </button>
+            <span class="text-xs font-extrabold uppercase text-forest-dark">Acerto de Frete</span>
+            <div class="w-9"></div>
+          </div>
+
+          <div class="bg-white rounded-3xl p-5 shadow-md border border-gray-100 text-center space-y-3">
+            <span class="px-3 py-1 rounded-full bg-forest-light text-forest-dark text-[10px] font-extrabold uppercase">
+              PIX Instantâneo • Taxa Zero
+            </span>
+            <h3 id="payment-amount-display" class="text-3xl font-extrabold text-acai-dark">R$ 135,00</h3>
+            <p class="text-xs text-gray-500">Frete fluvial • 80 paneiros de açaí</p>
+
+            <div class="w-40 h-40 mx-auto bg-gray-900 rounded-2xl p-3 flex items-center justify-center text-white">
+              <i class="fa-solid fa-qrcode text-8xl"></i>
+            </div>
+
+            <div class="bg-gray-50 p-2.5 rounded-xl border border-gray-200 flex items-center justify-between gap-2">
+              <code class="text-[10px] text-gray-600 truncate">00020126580014br.gov.bcb.pix0136rotacai-barcarena-pa</code>
+              <button onclick="copyPixCode()" class="px-2.5 py-1 rounded-lg bg-forest-dark text-white text-[10px] font-bold shrink-0">
+                Copiar
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <button onclick="confirmPaymentAndRate()" class="w-full py-3.5 rounded-2xl bg-forest-dark hover:bg-forest-medium text-white font-extrabold text-sm shadow-lg mt-4">
+          Confirmar Pagamento e Avaliar
+        </button>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ======================================================================= -->
+  <!-- JAVASCRIPT: MAPA LEAFLET, MQTT MULTI-APARELHOS E SIMULAÇÃO BOT          -->
+  <!-- ======================================================================= -->
+  <button id="admin-fab" onclick="adminFabClick()" class="fixed bottom-3 left-3 z-[60] w-11 h-11 rounded-full bg-forest-dark text-white shadow-xl border-2 border-white flex items-center justify-center" title="Administrador"><i class="fa-solid fa-user-shield"></i></button>
+  <div id="admin-pin-modal" class="hidden fixed inset-0 z-[80] bg-black/60 flex items-center justify-center p-6">
+    <div class="bg-white rounded-3xl p-5 w-full max-w-xs text-center">
+      <h3 class="font-extrabold text-gray-900">Área do Administrador</h3><p class="text-xs text-gray-500 mt-1">Digite o PIN de 4 dígitos</p>
+      <input id="admin-pin-input" type="password" inputmode="numeric" maxlength="4" class="mt-3 w-full text-center text-2xl tracking-[0.6em] py-2 rounded-2xl border border-gray-200 font-extrabold" />
+      <div class="grid grid-cols-2 gap-2 mt-4"><button onclick="document.getElementById('admin-pin-modal').classList.add('hidden')" class="py-2.5 rounded-2xl bg-gray-100 font-bold text-sm">Cancelar</button><button onclick="adminLogin()" class="py-2.5 rounded-2xl bg-forest-dark text-white font-bold text-sm">Entrar</button></div>
+    </div></div>
+  <div id="admin-dash" class="hidden fixed inset-0 z-[70] overflow-y-auto text-white" style="background:linear-gradient(160deg,#0b1f12,#1b0f33)"><div id="admin-body" class="p-4 max-w-md mx-auto pb-16"></div></div>
+  <button id="ad-banner" onclick="adClick()" class="hidden fixed z-[55] rounded-xl overflow-hidden shadow-lg border border-white bg-white" style="width:min(300px,84vw);height:48px"><img id="ad-img" class="w-full h-full object-cover" alt="Anúncio" /><span class="absolute top-0 right-0 text-[8px] bg-black/50 text-white px-1">Anúncio</span></button>
+    <div id="market" class="hidden fixed inset-0 z-[65] bg-cream overflow-y-auto"><div id="market-body" class="p-4 max-w-md mx-auto pb-20"></div></div>
+  <div id="mkt-modal" class="hidden fixed inset-0 z-[75] bg-black/60 flex items-end justify-center"><div id="mkt-modal-body" class="bg-white rounded-t-3xl p-5 w-full max-w-md max-h-[90vh] overflow-y-auto"></div></div>
+  <div id="receipt" class="hidden fixed inset-0 z-[85] bg-black/60 flex items-center justify-center p-4"><div id="receipt-body" class="bg-white rounded-2xl p-5 w-full max-w-sm max-h-[92vh] overflow-y-auto font-mono text-xs"></div></div>
+  <script src="config.js"></script>
+  <div id="admin-choice" class="hidden fixed inset-0 z-[90] bg-black/60 flex items-center justify-center p-6">
+    <div class="bg-white rounded-3xl p-5 w-full max-w-xs text-center">
+      <h3 class="font-extrabold text-gray-900">Acesso liberado</h3><p class="text-xs text-gray-500 mt-1">O que você quer abrir?</p>
+      <div class="mt-4 space-y-2">
+        <button onclick="adminChoose('menu')" class="w-full py-3 rounded-2xl bg-forest-dark text-white font-extrabold text-sm"><i class="fa-solid fa-sliders"></i> Abrir menu superior</button>
+        <button onclick="adminChoose('admin')" class="w-full py-3 rounded-2xl bg-acai-dark text-white font-extrabold text-sm"><i class="fa-solid fa-user-shield"></i> Área do administrador</button>
+        <button onclick="document.getElementById('admin-choice').classList.add('hidden')" class="w-full py-2 text-gray-500 text-xs font-bold">Cancelar</button>
+      </div></div></div>
+  <div id="wallet-modal" class="hidden fixed inset-0 z-[88] bg-black/60 flex items-center justify-center p-6"><div id="wallet-body" class="bg-white rounded-3xl p-5 w-full max-w-xs text-center"></div></div>
+  <script>
+    // Coordenadas Reais de Barcarena-PA e Comunidades Ribeirinhas
+    const LOCATIONS = {
+      saopedro: { name: 'Comunidade São Pedro (Rio Arapari)', coords: [-1.5365, -48.6510] },
+      oncas: { name: 'Ilha das Onças (Furo Grande)', coords: [-1.4620, -48.5540] },
+      trambioca: { name: 'Ilha Trambioca (Trapiche Norte)', coords: [-1.4910, -48.6180] },
+      cafezal: { name: 'Rio Cafezal (São João)', coords: [-1.5640, -48.6720] },
+      portocentral: { name: 'Porto Central de Barcarena (Feira)', coords: [-1.5058, -48.6258] },
+      viladoconde: { name: 'Porto de Vila do Conde', coords: [-1.5432, -48.7485] },
+      arapari: { name: 'Porto do Arapari', coords: [-1.4885, -48.5912] }
+    };
+
+    const state = {
+      role: 'produtor',
+      userName: 'Produtor Ribeirinho',
+      boatName: 'B/M Açaí Forte I',
+      boatCapacity: '4,0t',
+      room: 'global', // sem salas: todos os aparelhos entram juntos automaticamente
+      clientId: 'rotacai_' + Math.random().toString(16).slice(2, 8),
+      peers: {},
+      activeRide: null,
+      navInterval: null,
+      callCountdownInterval: null,
+      botRunning: false,
+      driverTrips: 0,
+      radarOn: false,
+      rejectedRides: {},
+      walletQuietUntil: 0
+    };
+
+    // ======================================================================
+    // ROTEAMENTO FLUVIAL — a rota e o barco só andam sobre ÁGUA.
+    // Os tiles do OpenStreetMap são lidos em memória, os pixels de água viram
+    // uma grade (célula ≈ 19 m) e o caminho é calculado com A* somente sobre
+    // células de água ligadas ao rio principal, preferindo o meio do canal.
+    // ======================================================================
+    const WATER = {
+      Z: 14, S: 2,                                  // zoom 14, célula = 2x2 px
+      BBOX: { south: -1.62, north: -1.42, west: -48.80, east: -48.51 },
+      COLOR: [170, 211, 223], TOL: 14,              // cor da água no OSM (#aad3df); tolerância estrita
+      promise: null, ready: false, failed: false, run: 0,
+      W: 0, H: 0, x0: 0, y0: 0,
+      water: null, dist: null, main: null,
+      g: null, seen: null, done: null, parent: null
+    };
+    const ROUTES = {};
+    const SHORE_MULT = (() => {
+      const m = new Float32Array(32);
+      for (let d = 0; d < 32; d++) m[d] = 1 + Math.max(0, 6 - d / 3) * 0.4; // custo maior perto da margem
+      return m;
+    })();
+
+    function wLngToPx(lng) { return (lng + 180) / 360 * 256 * Math.pow(2, WATER.Z); }
+    function wLatToPx(lat) {
+      const s = Math.sin(lat * Math.PI / 180);
+      return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 256 * Math.pow(2, WATER.Z);
+    }
+    function wPxToLng(px) { return px / (256 * Math.pow(2, WATER.Z)) * 360 - 180; }
+    function wPxToLat(py) {
+      const n = Math.PI - 2 * Math.PI * py / (256 * Math.pow(2, WATER.Z));
+      return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+    }
+    function cellToLatLng(cx, cy) {
+      return [wPxToLat(WATER.y0 * 256 + (cy + 0.5) * WATER.S), wPxToLng(WATER.x0 * 256 + (cx + 0.5) * WATER.S)];
+    }
+    function latLngToCell(lat, lng) {
+      return [Math.floor((wLngToPx(lng) - WATER.x0 * 256) / WATER.S), Math.floor((wLatToPx(lat) - WATER.y0 * 256) / WATER.S)];
+    }
+    function haversineM(a, b) {
+      const R = 6371000, rad = Math.PI / 180;
+      const dLat = (b[0] - a[0]) * rad, dLng = (b[1] - a[1]) * rad;
+      const s = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(s));
+    }
+
+    // Distância até a margem + rio principal (maior componente conexa de água)
+    function processWaterGrid() {
+      const W = WATER.W, H = WATER.H, water = WATER.water, N = W * H;
+      for (let x = 0; x < W; x++) { water[x] = 0; water[(H - 1) * W + x] = 0; }
+      for (let y = 0; y < H; y++) { water[y * W] = 0; water[y * W + W - 1] = 0; }
+
+      const d = new Uint16Array(N);
+      for (let i = 0; i < N; i++) d[i] = water[i] ? 60000 : 0;
+      for (let y = 1; y < H - 1; y++) {
+        for (let x = 1; x < W - 1; x++) {
+          const i = y * W + x; if (!d[i]) continue;
+          let v = d[i], t;
+          t = d[i - 1] + 3; if (t < v) v = t;
+          t = d[i - W] + 3; if (t < v) v = t;
+          t = d[i - W - 1] + 4; if (t < v) v = t;
+          t = d[i - W + 1] + 4; if (t < v) v = t;
+          d[i] = v;
+        }
+      }
+      for (let y = H - 2; y >= 1; y--) {
+        for (let x = W - 2; x >= 1; x--) {
+          const i = y * W + x; if (!d[i]) continue;
+          let v = d[i], t;
+          t = d[i + 1] + 3; if (t < v) v = t;
+          t = d[i + W] + 3; if (t < v) v = t;
+          t = d[i + W + 1] + 4; if (t < v) v = t;
+          t = d[i + W - 1] + 4; if (t < v) v = t;
+          d[i] = v;
+        }
+      }
+
+      const comp = new Int32Array(N), stack = new Int32Array(N);
+      let label = 0, best = 0, bestSize = 0;
+      for (let i = 0; i < N; i++) {
+        if (!water[i] || comp[i]) continue;
+        label++; let sp = 0, size = 0;
+        stack[sp++] = i; comp[i] = label;
+        while (sp) {
+          const c = stack[--sp]; size++;
+          const nb = [c - 1, c + 1, c - W, c + W];
+          for (let k = 0; k < 4; k++) {
+            const n = nb[k];
+            if (water[n] && !comp[n]) { comp[n] = label; stack[sp++] = n; }
+          }
+        }
+        if (size > bestSize) { bestSize = size; best = label; }
+      }
+      if (!bestSize) throw new Error('Nenhuma água encontrada no mapa');
+      const main = new Uint8Array(N);
+      for (let i = 0; i < N; i++) main[i] = comp[i] === best ? 1 : 0;
+      WATER.dist = d; WATER.main = main; WATER.mainSize = bestSize;
+    }
+
+    // Ponto de água do rio principal mais próximo (e um pouco mais para o meio do canal)
+    function snapToWater(lat, lng) {
+      const W = WATER.W, H = WATER.H, main = WATER.main, dist = WATER.dist;
+      let [cx, cy] = latLngToCell(lat, lng);
+      cx = Math.min(W - 2, Math.max(1, cx)); cy = Math.min(H - 2, Math.max(1, cy));
+      const scan = (R) => {
+        let bi = -1, bd = Infinity;
+        for (let dy = -R; dy <= R; dy++) {
+          const y = cy + dy; if (y < 1 || y > H - 2) continue;
+          for (let dx = -R; dx <= R; dx++) {
+            const x = cx + dx; if (x < 1 || x > W - 2) continue;
+            const i = y * W + x;
+            if (main[i]) { const d2 = dx * dx + dy * dy; if (d2 < bd) { bd = d2; bi = i; } }
+          }
+        }
+        return { bi, bd };
+      };
+      let r = 0, hit = null;
+      for (; r <= 400; r += 4) { const s = scan(r); if (s.bi >= 0) { hit = s; break; } }
+      if (!hit) return null;
+      hit = scan(Math.ceil(Math.sqrt(hit.bd)) + 1);
+      let bi = hit.bi, px = bi % W, py = (bi / W) | 0;
+      let bestD = dist[bi], bx = px, by = py;
+      for (let dy = -3; dy <= 3; dy++) {
+        for (let dx = -3; dx <= 3; dx++) {
+          const x = px + dx, y = py + dy; if (x < 1 || x > W - 2 || y < 1 || y > H - 2) continue;
+          const i = y * W + x;
+          if (main[i] && dist[i] > bestD) { bestD = dist[i]; bi = i; bx = x; by = y; }
+        }
+      }
+      const ll = cellToLatLng(bx, by);
+      return { cell: by * W + bx, lat: ll[0], lng: ll[1], meters: haversineM([lat, lng], ll) };
+    }
+
+    // A* somente em células de água do rio principal
+    function findWaterPath(sI, gI) {
+      const W = WATER.W, H = WATER.H, main = WATER.main, dist = WATER.dist, N = W * H;
+      if (!WATER.g) {
+        WATER.g = new Float32Array(N); WATER.seen = new Int32Array(N);
+        WATER.done = new Int32Array(N); WATER.parent = new Int32Array(N);
+      }
+      const g = WATER.g, seen = WATER.seen, done = WATER.done, parent = WATER.parent;
+      const run = ++WATER.run;
+      const gx = gI % W, gy = (gI / W) | 0;
+      const DX = [1, -1, 0, 0, 1, 1, -1, -1], DY = [0, 0, 1, -1, 1, -1, 1, -1];
+      const hf = [], hn = [];
+      const push = (f, n) => {
+        let i = hf.length; hf.push(f); hn.push(n);
+        while (i > 0) { const p = (i - 1) >> 1; if (hf[p] <= f) break; hf[i] = hf[p]; hn[i] = hn[p]; i = p; }
+        hf[i] = f; hn[i] = n;
+      };
+      const pop = () => {
+        const top = hn[0], lf = hf.pop(), ln = hn.pop(), len = hf.length;
+        if (len > 0) {
+          let i = 0;
+          for (;;) {
+            let c = 2 * i + 1; if (c >= len) break;
+            if (c + 1 < len && hf[c + 1] < hf[c]) c++;
+            if (hf[c] >= lf) break;
+            hf[i] = hf[c]; hn[i] = hn[c]; i = c;
+          }
+          hf[i] = lf; hn[i] = ln;
+        }
+        return top;
+      };
+      const h = (n) => {
+        const dx = Math.abs((n % W) - gx), dy = Math.abs(((n / W) | 0) - gy);
+        return Math.max(dx, dy) + 0.41421356 * Math.min(dx, dy);
+      };
+      g[sI] = 0; seen[sI] = run; parent[sI] = -1; push(h(sI), sI);
+      while (hf.length) {
+        const cur = pop();
+        if (done[cur] === run) continue;
+        done[cur] = run;
+        if (cur === gI) break;
+        const cx = cur % W, cy = (cur / W) | 0, gc = g[cur];
+        const mc = SHORE_MULT[Math.min(dist[cur], 31)];
+        for (let k = 0; k < 8; k++) {
+          const nx = cx + DX[k], ny = cy + DY[k], ni = ny * W + nx;
+          if (!main[ni] || done[ni] === run) continue;
+          const diag = DX[k] !== 0 && DY[k] !== 0;
+          if (diag && (!main[cy * W + nx] || !main[ny * W + cx])) continue; // sem cortar quina de terra
+          const ng = gc + (diag ? 1.41421356 : 1) * 0.5 * (mc + SHORE_MULT[Math.min(dist[ni], 31)]);
+          if (seen[ni] !== run || ng < g[ni]) { seen[ni] = run; g[ni] = ng; parent[ni] = cur; push(ng + h(ni), ni); }
+        }
+      }
+      if (done[gI] !== run) return null;
+      const path = [];
+      for (let c = gI; c !== -1; c = parent[c]) path.push(c);
+      return path.reverse();
+    }
+
+    // Linha reta só é aceita se TODAS as células amostradas forem água com folga da margem
+    function waterLineClear(ax, ay, bx, by) {
+      const W = WATER.W, main = WATER.main, dist = WATER.dist;
+      const dx = bx - ax, dy = by - ay, n = Math.max(1, Math.ceil(Math.hypot(dx, dy) * 2));
+      for (let k = 0; k <= n; k++) {
+        const i = Math.round(ay + dy * k / n) * W + Math.round(ax + dx * k / n);
+        if (!main[i] || dist[i] < 6) return false;
+      }
+      return true;
+    }
+    function smoothWaterPath(path) {
+      const W = WATER.W, n = path.length;
+      if (n < 3) return path.slice();
+      const out = [path[0]];
+      let i = 0;
+      while (i < n - 1) {
+        let found = i + 1;
+        for (let j = Math.min(n - 1, i + 150); j > i + 1; j--) {
+          if (waterLineClear(path[i] % W, (path[i] / W) | 0, path[j] % W, (path[j] / W) | 0)) { found = j; break; }
+        }
+        out.push(path[found]); i = found;
+      }
+      return out;
+    }
+
+    // Rota fluvial entre dois pontos nomeados (em cache)
+    function getRiverRoute(aKey, bKey) {
+      if (!WATER.ready) return null;
+      const key = aKey + '>' + bKey;
+      if (key in ROUTES) return ROUTES[key];
+      const A = LOCATIONS[aKey], B = LOCATIONS[bKey];
+      let route = null;
+      if (A && B && A.cell != null && B.cell != null) {
+        const cells = findWaterPath(A.cell, B.cell);
+        if (cells) {
+          const W = WATER.W;
+          const latlngs = smoothWaterPath(cells).map(i => cellToLatLng(i % W, (i / W) | 0));
+          const cum = [0];
+          for (let i = 1; i < latlngs.length; i++) cum.push(cum[i - 1] + haversineM(latlngs[i - 1], latlngs[i]));
+          route = { latlngs, cum, total: cum[cum.length - 1], km: cum[cum.length - 1] / 1000 };
+        }
+      }
+      ROUTES[key] = route;
+      return route;
+    }
+    function pointAlongRoute(route, p) {
+      const target = route.total * Math.min(1, Math.max(0, p)), cum = route.cum;
+      let lo = 0, hi = cum.length - 1;
+      while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= target) lo = m; else hi = m; }
+      const seg = cum[hi] - cum[lo], t = seg > 0 ? (target - cum[lo]) / seg : 0;
+      const a = route.latlngs[lo], b = route.latlngs[hi];
+      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    }
+
+    // Lê os tiles do mapa e marca o que é água (com tentativas, servidores reserva e cache local)
+    const TILE_HOSTS = ['https://tile.openstreetmap.org', 'https://a.tile.openstreetmap.org', 'https://tile.openstreetmap.de'];
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    function loadTile(x, y, attempt) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('tile ' + x + '/' + y));
+        img.src = `${TILE_HOSTS[attempt % TILE_HOSTS.length]}/${WATER.Z}/${x}/${y}.png`;
+      });
+    }
+
+    // Cache em IndexedDB: depois da 1ª vez o mapa dos rios abre na hora (e funciona offline)
+    const WATER_DB = 'rotacai', WATER_KEY = 'water-grid';
+    function idbOpen() {
+      return new Promise((res, rej) => {
+        const r = indexedDB.open(WATER_DB, 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('kv');
+        r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+      });
+    }
+    async function idbGet(k) {
+      const db = await idbOpen();
+      return new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+    }
+    async function idbSet(k, v) {
+      const db = await idbOpen();
+      return new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(); t.onerror = () => rej(t.error); });
+    }
+    async function idbDel(k) {
+      const db = await idbOpen();
+      return new Promise((res) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').delete(k); t.oncomplete = () => res(); t.onerror = () => res(); });
+    }
+    function packBits(a) { const o = new Uint8Array((a.length + 7) >> 3); for (let i = 0; i < a.length; i++) if (a[i]) o[i >> 3] |= 1 << (i & 7); return o; }
+    function unpackBits(b, n) { const o = new Uint8Array(n); for (let i = 0; i < n; i++) o[i] = (b[i >> 3] >> (i & 7)) & 1; return o; }
+    function waterSignature() { return [WATER.Z, WATER.S, WATER.TOL, JSON.stringify(WATER.BBOX), 'v4'].join('|'); }
+
+    async function fetchWaterFromTiles(xMin, yMin, xMax, yMax) {
+      const S = WATER.S, n = 256 / S;
+      const jobs = [];
+      for (let y = yMin; y <= yMax; y++) for (let x = xMin; x <= xMax; x++) jobs.push({ x, y });
+      const total = jobs.length;
+      let finished = 0, failedTiles = 0;
+      const cv = document.createElement('canvas'); cv.width = cv.height = 256;
+      const ctx = cv.getContext('2d', { willReadFrequently: true });
+      const R = WATER.COLOR[0], G = WATER.COLOR[1], Bl = WATER.COLOR[2], tol2 = WATER.TOL * WATER.TOL;
+
+      async function worker() {
+        while (jobs.length) {
+          const j = jobs.shift();
+          let img = null;
+          for (let t = 0; t < 4 && !img; t++) {
+            try { img = await loadTile(j.x, j.y, t); } catch (e) { await sleep(300 * (t + 1)); }
+          }
+          if (!img) { failedTiles++; }
+          else {
+            let data;
+            try {
+              ctx.clearRect(0, 0, 256, 256); ctx.drawImage(img, 0, 0);
+              data = ctx.getImageData(0, 0, 256, 256).data;
+            } catch (e) { jobs.length = 0; throw e; }
+            const ox = (j.x - xMin) * n, oy = (j.y - yMin) * n;
+            for (let cy = 0; cy < n; cy++) {
+              for (let cx = 0; cx < n; cx++) {
+                let hit = 0;
+                for (let dy = 0; dy < S; dy++) {
+                  for (let dx = 0; dx < S; dx++) {
+                    const i = ((cy * S + dy) * 256 + cx * S + dx) * 4;
+                    const dr = data[i] - R, dg = data[i + 1] - G, db = data[i + 2] - Bl;
+                    if (dr * dr + dg * dg + db * db <= tol2) hit++;
+                  }
+                }
+                if (hit * 2 >= S * S) WATER.water[(oy + cy) * WATER.W + ox + cx] = 1;
+              }
+            }
+          }
+          finished++;
+          if (typeof setWaterStatus === 'function') setWaterStatus('loading', Math.round(finished / total * 100));
+        }
+      }
+      await Promise.all(Array.from({ length: 6 }, worker));
+      if (failedTiles > total * 0.1) throw new Error('Falha ao baixar tiles do mapa (' + failedTiles + '/' + total + ')');
+    }
+
+    async function buildWaterMap() {
+      const S = WATER.S, B = WATER.BBOX, n = 256 / S;
+      const xMin = Math.floor(wLngToPx(B.west) / 256), xMax = Math.floor(wLngToPx(B.east) / 256);
+      const yMin = Math.floor(wLatToPx(B.north) / 256), yMax = Math.floor(wLatToPx(B.south) / 256);
+      WATER.x0 = xMin; WATER.y0 = yMin;
+      WATER.W = (xMax - xMin + 1) * n; WATER.H = (yMax - yMin + 1) * n;
+      const N = WATER.W * WATER.H, sig = waterSignature();
+
+      let cached = null;
+      if (!WATER.skipCache && typeof indexedDB !== 'undefined') { try { cached = await idbGet(WATER_KEY); } catch (e) { cached = null; } }
+      if (cached && cached.sig === sig && cached.bits && Date.now() - cached.ts < 30 * 864e5) {
+        WATER.water = unpackBits(cached.bits, N);
+      } else {
+        WATER.water = new Uint8Array(N);
+        if (typeof setWaterStatus === 'function') setWaterStatus('loading', 0);
+        await fetchWaterFromTiles(xMin, yMin, xMax, yMax);
+        let wc = 0; for (let i = 0; i < N; i++) wc += WATER.water[i];
+        const frac = wc / N;
+        if (frac < 0.03 || frac > 0.95) throw new Error('Máscara de água inválida (' + (frac * 100).toFixed(1) + '%)');
+        if (typeof indexedDB !== 'undefined') { try { await idbSet(WATER_KEY, { sig, ts: Date.now(), bits: packBits(WATER.water) }); } catch (e) { /* cache é opcional */ } }
+      }
+      processWaterGrid();
+      WATER.ready = true;
+      if (typeof onWaterReady === 'function') onWaterReady();
+    }
+    function ensureWaterMap() {
+      if (WATER.promise) return WATER.promise;
+      WATER.promise = buildWaterMap().then(() => true).catch(err => {
+        console.error('Mapa fluvial:', err);
+        WATER.failed = true;
+        if (typeof setWaterStatus === 'function') setWaterStatus('error');
+        return false;
+      });
+      return WATER.promise;
+    }
+    async function retryWaterMap() {
+      if (WATER.ready) return;
+      WATER.promise = null; WATER.failed = false; WATER.skipCache = true;
+      try { await idbDel(WATER_KEY); } catch (e) { /* ok */ }
+      ensureWaterMap();
+    }
+
+    let map, originMarker, destMarker, boatMarker, routePolyline, mqttClient;
+    const BOAT_HOME = [-1.518, -48.638];
+
+    // Chip de status do mapeamento dos rios
+    function setWaterStatus(kind, pct) {
+      const el = document.getElementById('water-status');
+      if (!el) return;
+      clearTimeout(window._waterChipTimer);
+      el.classList.remove('hidden'); el.classList.add('flex');
+      if (kind === 'loading') {
+        el.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Mapeando rios… ${pct || 0}%`;
+      } else if (kind === 'error') {
+        el.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-red-600"></i> Falha ao mapear os rios — toque para tentar de novo';
+      } else {
+        el.innerHTML = '<i class="fa-solid fa-water text-blue-600"></i> Rios mapeados';
+        window._waterChipTimer = setTimeout(() => { el.classList.add('hidden'); el.classList.remove('flex'); }, 2200);
+      }
+    }
+
+    // Quando a grade de água fica pronta: coloca portos e barco DENTRO do rio
+    function onWaterReady() {
+      Object.keys(LOCATIONS).forEach(k => {
+        const loc = LOCATIONS[k];
+        if (!loc.orig) loc.orig = loc.coords.slice();
+        const s = snapToWater(loc.orig[0], loc.orig[1]);
+        if (s) { loc.cell = s.cell; loc.coords = [s.lat, s.lng]; console.info(`Ponto "${k}" ajustado ${Math.round(s.meters)} m para dentro do rio`); }
+      });
+      if (boatMarker && !state.navInterval) {
+        const b = snapToWater(BOAT_HOME[0], BOAT_HOME[1]);
+        if (b) boatMarker.setLatLng([b.lat, b.lng]);
+      }
+      setWaterStatus('done');
+      updateRoutePreview();
+    }
+
+    function routeKmText(origKey, destKey) {
+      const r = getRiverRoute(origKey, destKey);
+      if (r) return `${r.km.toFixed(1).replace('.', ',')} km`;
+      const km = destKey === 'viladoconde' ? 14.2 : (origKey === 'oncas' ? 11.4 : 8.5);
+      return `~${km.toFixed(1).replace('.', ',')} km`;
+    }
+
+    function drawRoute(route, origKey, destKey) {
+      if (routePolyline) { map.removeLayer(routePolyline); routePolyline = null; }
+      const orig = LOCATIONS[origKey], dest = LOCATIONS[destKey];
+      if (orig && dest) {
+        originMarker.setLatLng(orig.coords).setPopupContent(`Coleta: ${orig.name}`);
+        destMarker.setLatLng(dest.coords).setPopupContent(`Destino: ${dest.name}`);
+      }
+      if (route) {
+        state.routeBounds = L.latLngBounds(route.latlngs); // sem linha desenhada
+        map.fitBounds(state.routeBounds, { padding: [45, 45] });
+      } else if (orig && dest) {
+        // Rios ainda não mapeados: mostra só os pontos (nunca uma linha reta por cima da terra)
+        map.fitBounds(L.latLngBounds([orig.coords, dest.coords]), { padding: [45, 45] });
+      }
+    }
+
+    // 1. INICIALIZAÇÃO DO MAPA LEAFLET EM BARCARENA-PA (interativo, com zoom)
+    function initMap() {
+      map = L.map('leaflet-map', {
+        zoomControl: false, minZoom: 9, maxZoom: 18,
+        scrollWheelZoom: true, touchZoom: true, doubleClickZoom: true, dragging: true
+      }).setView([-1.512, -48.635], 12);
+
+      L.control.zoom({ position: 'bottomright', zoomInTitle: 'Aproximar', zoomOutTitle: 'Afastar' }).addTo(map);
+
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, crossOrigin: true,
+        attribution: '&copy; OpenStreetMap • Barcarena-PA'
+      }).addTo(map);
+
+      const anchorIcon = L.divIcon({
+        html: '<div class="w-7 h-7 rounded-full bg-forest-dark text-white flex items-center justify-center shadow-md border-2 border-white text-xs"><i class="fa-solid fa-anchor"></i></div>',
+        className: '', iconSize: [28, 28], iconAnchor: [14, 14]
+      });
+
+      const portIcon = L.divIcon({
+        html: '<div class="w-7 h-7 rounded-full bg-acai-dark text-white flex items-center justify-center shadow-md border-2 border-white text-xs"><i class="fa-solid fa-flag-checkered"></i></div>',
+        className: '', iconSize: [28, 28], iconAnchor: [14, 14]
+      });
+
+      const boatIcon = L.divIcon({
+        html: '<div class="w-9 h-9 rounded-full bg-amber-400 text-forest-dark flex items-center justify-center shadow-lg border-2 border-forest-dark text-sm boat-pulse"><i class="fa-solid fa-ship"></i></div>',
+        className: '', iconSize: [36, 36], iconAnchor: [18, 18]
+      });
+
+      originMarker = L.marker(LOCATIONS.saopedro.coords, { icon: anchorIcon }).addTo(map).bindPopup('Ponto de Coleta');
+      destMarker = L.marker(LOCATIONS.portocentral.coords, { icon: portIcon }).addTo(map).bindPopup('Porto de Destino');
+      boatMarker = L.marker(BOAT_HOME, { icon: boatIcon }).addTo(map).bindPopup('B/M Açaí Forte I (Disponível)');
+
+      updateRoutePreview();
+    }
+
+    function updateRoutePreview() {
+      const origKey = document.getElementById('ride-origin-select').value;
+      const destKey = document.getElementById('ride-dest-select').value;
+      if (!LOCATIONS[origKey] || !LOCATIONS[destKey] || !map) return;
+      drawRoute(getRiverRoute(origKey, destKey), origKey, destKey);
+      updateFreightCalculation();
+    }
+
+    function recenterMap() {
+      if (!map) return;
+      if (state.routeBounds) map.fitBounds(state.routeBounds, { padding: [45, 45] });
+      else map.setView([-1.512, -48.635], 12);
+    }
+
+    // 2. CALCULADORA DE PANEIROS E FRETE FLUVIAL
+    function updateFreightCalculation() {
+      const paneiros = parseInt(document.getElementById('paneiros-slider').value, 10);
+      const tons = ((paneiros * 14) / 1000).toFixed(2).replace('.', ',');
+      document.getElementById('cargo-weight-badge').textContent = `${paneiros} paneiros • ${tons} ton`;
+
+      const origKey = document.getElementById('ride-origin-select').value;
+      const destKey = document.getElementById('ride-dest-select').value;
+      const river = getRiverRoute(origKey, destKey);
+      const baseKm = river ? river.km : (destKey === 'viladoconde' ? 14.2 : (origKey === 'oncas' ? 11.4 : 8.5));
+      document.getElementById('route-km-label').textContent = routeKmText(origKey, destKey);
+
+      const price = Math.round(45 + baseKm * 6.5 + paneiros * 0.45);
+      const formattedPrice = `R$ ${price},00`;
+      document.getElementById('estimated-price-label').textContent = formattedPrice;
+      document.getElementById('payment-amount-display').textContent = formattedPrice;
+    }
+
+    // 3. NAVEGAÇÃO ENTRE TELAS E PERFIS
+    function navigateTo(screenId) {
+      if (!['splash', 'login', 'auth'].includes(screenId) && !state.phone) screenId = 'login';
+      if (screenId === 'auth' && state.pendingType) { const s = document.getElementById('auth-role-select'); if (s) s.value = state.pendingType; }
+      document.querySelectorAll('.screen-view').forEach(el => el.classList.add('hidden'));
+      const target = document.getElementById(`screen-${screenId}`);
+      if (target) {
+        target.classList.remove('hidden');
+        target.classList.add('screen-enter');
+      }
+      if (screenId === 'main' && map) {
+        setTimeout(() => map.invalidateSize(), 150);
+      }
+    }
+
+
+    // ---------- carrossel de categorias (deslizar, arrastar com o mouse, setas e teclado) ----------
+    function initCarousel() {
+      const el = document.getElementById('role-carousel'); if (!el) return;
+      const cards = [...el.querySelectorAll('.role-card')], dotsBox = document.getElementById('role-dots');
+      dotsBox.innerHTML = cards.map(() => '<span class="role-dot"></span>').join('');
+      const dots = [...dotsBox.children];
+      let ticking = false, active = 0;
+      const update = () => {
+        ticking = false;
+        const mid = el.scrollLeft + el.clientWidth / 2; let best = 0, bd = Infinity;
+        cards.forEach((c, i) => { const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid); if (d < bd) { bd = d; best = i; } });
+        active = best;
+        cards.forEach((c, i) => c.classList.toggle('is-active', i === best));
+        dots.forEach((d, i) => d.classList.toggle('on', i === best));
+      };
+      const go = i => { i = Math.max(0, Math.min(cards.length - 1, i)); const c = cards[i]; el.scrollTo({ left: c.offsetLeft - (el.clientWidth - c.offsetWidth) / 2, behavior: 'smooth' }); };
+      el.addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } }, { passive: true });
+      document.getElementById('role-prev').onclick = () => go(active - 1);
+      document.getElementById('role-next').onclick = () => go(active + 1);
+      dots.forEach((d, i) => d.onclick = () => go(i));
+      el.addEventListener('keydown', e => { if (e.key === 'ArrowRight') { go(active + 1); e.preventDefault(); } if (e.key === 'ArrowLeft') { go(active - 1); e.preventDefault(); } });
+      // toque no card lateral traz ele para o centro (o botão Entrar / Cadastrar acessa o app)
+      cards.forEach((c, i) => c.addEventListener('click', e => { if (!e.target.closest('button') && i !== active) go(i); }));
+      // arrastar com o mouse no computador
+      let down = false, sx = 0, sl = 0, moved = 0;
+      el.addEventListener('pointerdown', e => { if (e.pointerType !== 'mouse') return; down = true; moved = 0; sx = e.clientX; sl = el.scrollLeft; });
+      window.addEventListener('pointermove', e => { if (!down) return; const dx = e.clientX - sx; moved = Math.max(moved, Math.abs(dx)); if (moved > 6) { el.classList.add('dragging'); el.scrollLeft = sl - dx; } });
+      window.addEventListener('pointerup', () => { if (!down) return; down = false; el.classList.remove('dragging'); if (moved > 6) go(active); });
+      el.addEventListener('click', e => { if (moved > 6) { e.stopPropagation(); e.preventDefault(); moved = 0; } }, true);
+      window.addEventListener('resize', update);
+      setTimeout(() => { go(0); update(); }, 60);
+    }
+
+    function startRegister(role) {
+      state.pendingType = role;
+      if (state.phone) return startAsRole(role);
+      navigateTo('auth');
+    }
+
+    function startAsRole(role) {
+      state.pendingType = role;
+      if (role === 'produtor' || role === 'entregador') quickSwitchRole(role);
+      navigateTo(state.phone ? 'main' : 'login');
+      if (state.phone && (role === 'vendedor' || role === 'comprador')) openMarket();
+    }
+
+    function quickSwitchRole(role) {
+      state.role = role;
+      const isProd = role === 'produtor';
+
+      document.getElementById('sidebar-role-label').textContent = isProd ? 'Produtor' : 'Entregador';
+      document.getElementById('header-user-name').textContent = isProd ? state.userName : `Comandante • ${state.boatName}`;
+      document.getElementById('header-role-sub').textContent = isProd ? 'Barcarena-PA • Maré Enchente' : `Capacidade ${state.boatCapacity} • Online`;
+
+      const badge = document.getElementById('header-role-badge');
+      badge.className = `w-8 h-8 rounded-xl text-white flex items-center justify-center text-sm shrink-0 ${isProd ? 'bg-forest-dark' : 'bg-acai-dark'}`;
+      badge.innerHTML = isProd ? '<i class="fa-solid fa-seedling"></i>' : '<i class="fa-solid fa-ship"></i>';
+
+      document.getElementById('btn-role-produtor').className = isProd
+        ? 'py-2 px-2.5 rounded-xl bg-forest-dark text-white text-[11px] font-extrabold transition flex items-center justify-center gap-1.5 shadow-sm'
+        : 'py-2 px-2.5 rounded-xl bg-forest-light text-forest-dark text-[11px] font-extrabold transition flex items-center justify-center gap-1.5';
+      document.getElementById('btn-role-entregador').className = !isProd
+        ? 'py-2 px-2.5 rounded-xl bg-acai-dark text-white text-[11px] font-extrabold transition flex items-center justify-center gap-1.5 shadow-sm'
+        : 'py-2 px-2.5 rounded-xl bg-acai-light text-acai-dark text-[11px] font-extrabold transition flex items-center justify-center gap-1.5';
+
+      document.getElementById('btn-boat-setup').classList.toggle('hidden', isProd); // produtor não mexe em barco
+      if (isProd && state.radarOn) setRadar(false);
+      refreshMainBottomPanel();
+      broadcastPresence();
+    }
+
+    // ---------- RADAR DO ENTREGADOR (só recebe viagens) ----------
+    async function requestWake() { try { if ('wakeLock' in navigator && !state.wake) { state.wake = await navigator.wakeLock.request('screen'); state.wake.addEventListener('release', () => { state.wake = null; }); } } catch (e) {} }
+    function releaseWake() { try { if (state.wake) state.wake.release(); } catch (e) {} state.wake = null; }
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && state.radarOn) requestWake(); });
+    function setRadar(on) {
+      if (on && state.role !== 'entregador') return;
+      state.radarOn = on;
+      document.getElementById('radar-off').classList.toggle('hidden', on);
+      document.getElementById('radar-on').classList.toggle('hidden', !on);
+      const sub = document.getElementById('driver-status-sub');
+      sub.textContent = on ? '● Online • Radar ativo' : '○ Offline • Radar fechado';
+      sub.className = 'text-[11px] font-bold ' + (on ? 'text-acai-dark' : 'text-gray-500');
+      if (on) { Alerts.radar(); requestWake(); showToast('Radar aberto. Aguardando chamados de produtores.', 'fa-satellite-dish'); }
+      else { releaseWake(); if (state.pendingIncomingRide) rejectIncomingRide(); }
+      updateSoundBanner(); broadcastPresence();
+    }
+    function updateSoundBanner() { const b = document.getElementById('sound-banner'); if (b) b.classList.toggle('hidden', !state.radarOn || Alerts.ready()); }
+    function updateBoatsNearby() {
+      const n = Object.values(state.peers).filter(p => p.role === 'entregador' && p.radar).length + (state.role === 'entregador' && state.radarOn ? 1 : 0);
+      const e = document.getElementById('boats-nearby-label'); if (e) e.textContent = `${n} barco${n === 1 ? '' : 's'} no radar`;
+    }
+    function onRideRequest(msg) {
+      if (state.role !== 'entregador' || !state.radarOn || state.activeRide || state.pendingIncomingRide) return;
+      if (state.rejectedRides[msg.id] || (msg.ts && Date.now() - msg.ts > 90000)) return;
+      openIncomingCallModal(msg);
+    }
+    function onRideClosed(msg, accepted) {
+      const pi = state.pendingIncomingRide;
+      state.rejectedRides[msg.rideId] = 1;
+      if (pi && pi.id === msg.rideId) {
+        if (state.callCountdownInterval) clearInterval(state.callCountdownInterval);
+        document.getElementById('incoming-call-modal').classList.add('hidden'); state.pendingIncomingRide = null;
+        showToast(accepted ? 'Outra embarcação aceitou essa viagem. Voltando ao radar.' : 'O produtor cancelou o chamado.', 'fa-satellite-dish');
+      }
+      if (accepted && state.activeRide && state.activeRide.id === msg.rideId && state.activeRide.status !== 'accepted') {
+        state.activeRide.status = 'accepted';
+        state.boatName = msg.boatName || state.boatName;
+        state.activeRide.driverId = msg.driverId;
+        updateActiveRideUI();
+        startBoatNavigationAnimation();
+        showToast(`${state.boatName} aceitou sua coleta!`, 'fa-ship');
+      }
+    }
+
+    function refreshMainBottomPanel() {
+      document.getElementById('panel-producer-idle').classList.add('hidden');
+      document.getElementById('panel-driver-idle').classList.add('hidden');
+      document.getElementById('panel-ride-active').classList.add('hidden');
+
+      if (state.activeRide) {
+        document.getElementById('panel-ride-active').classList.remove('hidden');
+      } else if (state.role === 'produtor') {
+        document.getElementById('panel-producer-idle').classList.remove('hidden');
+      } else {
+        document.getElementById('panel-driver-idle').classList.remove('hidden');
+      }
+    }
+
+    // 4. FLUXO DE SOLICITAÇÃO E EXECUÇÃO DE VIAGEM FLUVIAL
+    function requestAcaiRide() {
+      if (state.role !== 'produtor') return showToast('Entregador só recebe viagens pelo radar.', 'fa-satellite-dish');
+      const origKey = document.getElementById('ride-origin-select').value;
+      const destKey = document.getElementById('ride-dest-select').value;
+      const paneiros = document.getElementById('paneiros-slider').value;
+      const price = document.getElementById('estimated-price-label').textContent;
+      const distance = routeKmText(origKey, destKey);
+
+      const rideData = {
+        id: 'ride_' + Date.now(),
+        senderId: state.clientId,
+        senderName: state.userName,
+        originKey: origKey,
+        destKey: destKey,
+        originName: LOCATIONS[origKey].name,
+        destName: LOCATIONS[destKey].name,
+        paneiros: paneiros,
+        price: price,
+        distance: distance,
+        status: 'searching',
+        ts: Date.now()
+      };
+
+      state.activeRide = rideData;
+      updateActiveRideUI();
+      refreshMainBottomPanel();
+      showToast('Chamado enviado para barcos próximos em Barcarena!', 'fa-bullhorn');
+
+      publishMqtt('ride_request', rideData);
+      clearInterval(state.rideRebroadcast); const started = Date.now();
+      state.rideRebroadcast = setInterval(() => { // chama de novo quem abrir o radar depois; desiste em 90 s
+        const r = state.activeRide;
+        if (!r || r.id !== rideData.id || r.status !== 'searching') { clearInterval(state.rideRebroadcast); return; }
+        if (Date.now() - started > 90000) { clearInterval(state.rideRebroadcast); cancelActiveRide(); showToast('Nenhum barco aceitou ainda. Tente novamente em instantes.', 'fa-satellite-dish'); return; }
+        publishMqtt('ride_request', Object.assign({}, r, { ts: Date.now() }));
+      }, 20000);
+    }
+
+    function updateActiveRideUI() {
+      if (!state.activeRide) return;
+      if (state.activeRide.kind === 'delivery') {
+        const r = state.activeRide;
+        document.getElementById('active-ride-price').textContent = r.price;
+        document.getElementById('active-ride-route').textContent = `${r.originName.split('(')[0].trim()} ➔ ${r.destName.split('(')[0].trim()}`;
+        document.getElementById('sidebar-ride-label').textContent = 'Entrega';
+        const b = document.getElementById('active-ride-badge');
+        b.innerHTML = '<i class="fa-solid fa-ship mr-1"></i>Entrega a caminho 🤖';
+        b.className = 'px-3 py-1 rounded-full bg-green-100 text-forest-dark text-[10px] font-extrabold uppercase tracking-wider';
+        document.getElementById('active-ride-boat').textContent = `${r.boat} • ${r.skipper} • ${r.qty} rasa(s)`;
+        return;
+      }
+      document.getElementById('active-ride-price').textContent = state.activeRide.price;
+      document.getElementById('active-ride-route').textContent = `${state.activeRide.originName.split('(')[0]} ➔ ${state.activeRide.destName.split('(')[0]}`;
+      document.getElementById('sidebar-ride-label').textContent = state.activeRide.status === 'searching' ? 'Chamando' : 'Em Rota';
+
+      if (state.activeRide.status === 'searching') {
+        document.getElementById('active-ride-badge').innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Aguardando Barqueiro...';
+        document.getElementById('active-ride-boat').textContent = 'Chamando barcos com o radar ativo...';
+      } else {
+        document.getElementById('active-ride-badge').innerHTML = '<i class="fa-solid fa-ship mr-1"></i>Em Navegação no Rio';
+        document.getElementById('active-ride-badge').className = 'px-3 py-1 rounded-full bg-green-100 text-forest-dark text-[10px] font-extrabold uppercase tracking-wider';
+        document.getElementById('active-ride-boat').textContent = `${state.boatName} • Carga: ${state.activeRide.paneiros} paneiros`;
+      }
+    }
+
+    function startBoatNavigationAnimation() {
+      if (!state.activeRide || !map) return;
+      const ride = state.activeRide;
+      const DURATION = ride.duration || 9000; // duração da simulação (entrega do comércio: 15 s)
+      if (state.navInterval) clearInterval(state.navInterval);
+
+      // entrega já paga nunca fica presa: espera o mapa dos rios no máximo 8 s
+      (ride.kind === 'delivery' ? Promise.race([ensureWaterMap(), new Promise(r => setTimeout(() => r(false), 8000))]) : ensureWaterMap()).then(ok => {
+        if (state.activeRide !== ride) return; // cancelada enquanto carregava
+        const route = ok ? getRiverRoute(ride.originKey, ride.destKey) : null;
+
+        if (route) {
+          drawRoute(route, ride.originKey, ride.destKey);
+          boatMarker.setLatLng(route.latlngs[0]);
+        } else {
+          showToast('Rota fluvial indisponível: o barco não será movido por cima da terra.', 'fa-triangle-exclamation');
+        }
+
+        const t0 = Date.now();
+        state.navInterval = setInterval(() => {
+          if (state.activeRide !== ride) { clearInterval(state.navInterval); return; }
+          const p = Math.min(1, (Date.now() - t0) / DURATION);
+          if (route) {
+            boatMarker.setLatLng(pointAlongRoute(route, p));
+            const tip = `${kmFmt((1 - p) * route.km)} km / ${kmFmt(route.km)} km`;
+            if (!boatMarker.getTooltip()) boatMarker.bindTooltip(tip, { permanent: true, direction: 'top', offset: [0, -18], className: 'km-tip' });
+            else boatMarker.setTooltipContent(tip);
+          }
+
+          const pct = Math.round(p * 100);
+          document.getElementById('nav-progress-pct').textContent = `${pct}%`;
+          document.getElementById('nav-progress-bar').style.width = `${pct}%`;
+          const minLeft = route ? (1 - p) * route.km * 3 : (1 - p) * 18; // ~20 km/h
+          document.getElementById('active-ride-eta').textContent = p >= 1 ? 'Chegou!' : `~${Math.max(1, Math.round(minLeft))} min`;
+
+          if (p >= 1) {
+            clearInterval(state.navInterval);
+            if (ride.kind === 'delivery') return finishDelivery(ride);
+            showToast('Embarcação atracou no porto de destino! Carga entregue.', 'fa-anchor');
+            triggerArrivalAndPaymentFlow();
+          }
+        }, 80);
+      });
+    }
+
+    function cancelActiveRide() {
+      if (state.activeRide && state.activeRide.kind === 'delivery') return showToast('Entrega já paga: o barco está a caminho.', 'fa-ship');
+      if (state.navInterval) clearInterval(state.navInterval);
+      clearInterval(state.rideRebroadcast);
+      if (state.activeRide) publishMqtt('ride_cancelled', { rideId: state.activeRide.id });
+      state.activeRide = null;
+      document.getElementById('sidebar-ride-label').textContent = 'Livre';
+      refreshMainBottomPanel();
+      showToast('Viagem fluvial cancelada.', 'fa-circle-xmark');
+    }
+
+    // 1) Chegada ao porto de destino sinaliza o produtor e abre solicitação de pagamento
+    function completeActiveRide() {
+      if (state.activeRide && state.activeRide.kind === 'delivery') return finishDelivery(state.activeRide);
+      if (state.navInterval) clearInterval(state.navInterval);
+      triggerArrivalAndPaymentFlow();
+    }
+
+    function triggerArrivalAndPaymentFlow() {
+      if (!state.activeRide) {
+        // Se chamado manualmente ou simulação sem ride ativo
+        state.activeRide = {
+          id: 'ride_dummy_' + Date.now(),
+          originName: 'Comunidade São Pedro (Rio Arapari)',
+          destName: 'Porto Central de Barcarena (Feira)',
+          paneiros: 80,
+          price: 'R$ 135,00'
+        };
+      }
+
+      const ride = state.activeRide;
+      const activeRidePrice = state.activeRide.price || 'R$ 135,00';
+      const cargoText = `${state.activeRide.paneiros || 80} paneiros`;
+
+      document.getElementById('payment-modal-price').textContent = activeRidePrice;
+      document.getElementById('payment-modal-cargo').textContent = cargoText;
+
+      state.driverTrips += 1;
+      document.getElementById('driver-trips-count').textContent = `${state.driverTrips} viagens`;
+      
+      state.activeRide = null;
+      document.getElementById('sidebar-ride-label').textContent = 'Aguardando Pagamento';
+      refreshMainBottomPanel();
+
+      // Notifica o produtor / Abre tela de pagamento
+      const isRequester = !ride.senderId || ride.senderId === state.clientId;
+      state.payingRide = isRequester ? ride : null;
+      if (isRequester) {
+        showToast('Carga entregue! Escolha como pagar a viagem.', 'fa-file-invoice-dollar');
+        document.getElementById('payment-method-modal').classList.remove('hidden');
+      } else {
+        showToast('Carga entregue! Aguardando o pagamento do cliente.', 'fa-hourglass-half');
+      }
+      publishMqtt('cargo_delivered', { rideId: ride.id });
+    }
+
+    function selectPaymentMethod(method) {
+      document.getElementById('selected-payment-method').value = method;
+      document.querySelectorAll('.payment-option-btn').forEach(btn => {
+        btn.className = 'payment-option-btn p-3 rounded-2xl border-2 border-forest-dark/20 bg-gray-50 hover:bg-gray-100 text-gray-800 text-left transition flex flex-col gap-1';
+      });
+      const selectedBtn = document.getElementById(`pm-${method}`);
+      if (selectedBtn) {
+        selectedBtn.className = 'payment-option-btn p-3 rounded-2xl border-2 border-acai-dark bg-acai-light/40 hover:bg-acai-light text-acai-dark text-left transition flex flex-col gap-1 shadow-sm';
+      }
+    }
+
+    // 3) Somente após confirmação do pagamento é liberada a tela para avaliação 5 estrelas
+    function confirmPaymentAndUnlockRating() {
+      const method = document.getElementById('selected-payment-method').value;
+      const _pr = state.payingRide || {}, _gross = parseBRL(_pr.price || document.getElementById('payment-modal-price').textContent);
+      if (myBal() < _gross) { showToast('Saldo insuficiente. Adicione saldo fictício.', 'fa-wallet'); openWallet(); return; }
+      document.getElementById('payment-method-modal').classList.add('hidden');
+
+      showToast(`Pagamento via ${method} confirmado com sucesso!`, 'fa-circle-check'); Alerts.notify();
+      const pr = state.payingRide || {};
+      const gross = parseBRL(pr.price || document.getElementById('payment-modal-price').textContent), fee = calcFee(gross);
+      const route = (pr.originName || '') + ' ➔ ' + (pr.destName || '');
+      DB.inc('wallets/' + state.userId, -gross, baseFor(state.userId));                                   // cliente paga o frete
+      if (pr.driverId) DB.inc('wallets/' + pr.driverId, +(gross - fee).toFixed(2), baseFor(pr.driverId));  // entregador recebe sem a taxa
+      DB.inc('wallets/admin', fee, ADMIN_BASE);                                                  // taxa vai para o ADM
+      publishMqtt('payment_confirmed', { method, rideId: pr.id || ('tx_' + Date.now()), gross, fee, client: state.userName, route, ts: Date.now(), driverId: pr.driverId });
+      recordTx({ id: pr.id || ('tx_' + Date.now()), ts: Date.now(), kind: 'viagem', gross, fee, method, client: state.userName, route, driver: state.boatName });
+      state.payingRide = null;
+
+      // Libera tela de avaliação 5 estrelas para o produtor
+      document.getElementById('rating-route-summary').textContent = 'São Pedro ➔ Porto Central de Barcarena';
+      document.getElementById('rating-partner-name').textContent = `Mestre Raimundo • ${state.boatName}`;
+      document.getElementById('rating-modal').classList.remove('hidden');
+    }
+
+    // 5. MODAL DE CHAMADA PARA O ENTREGADOR
+    function simulateIncomingCallForDriver() {
+      const sampleRide = {
+        id: 'ride_sim_' + Date.now(),
+        senderId: 'bot_sim',
+        senderName: 'Produtor Carlos (Rio Arapari)',
+        originKey: 'saopedro',
+        destKey: 'portocentral',
+        originName: LOCATIONS.saopedro.name,
+        destName: LOCATIONS.portocentral.name,
+        paneiros: 140,
+        price: 'R$ 165,00',
+        distance: '8,5 km pelo rio'
+      };
+      openIncomingCallModal(sampleRide);
+    }
+
+    function openIncomingCallModal(ride) {
+      state.pendingIncomingRide = ride;
+      document.getElementById('call-modal-sender').textContent = `Solicitado por ${ride.senderName}`;
+      document.getElementById('call-modal-price').textContent = ride.price;
+      const tons = ((ride.paneiros * 14) / 1000).toFixed(1).replace('.', ',');
+      document.getElementById('call-modal-tonnage').textContent = `${ride.paneiros} paneiros (${tons}t)`;
+      document.getElementById('call-modal-distance').textContent = ride.distance;
+      document.getElementById('call-modal-origin').textContent = ride.originName;
+      document.getElementById('call-modal-dest').textContent = ride.destName;
+
+      document.getElementById('incoming-call-modal').classList.remove('hidden');
+      Alerts.notify();
+
+      let sec = 25;
+      if (state.callCountdownInterval) clearInterval(state.callCountdownInterval);
+      state.callCountdownInterval = setInterval(() => {
+        sec -= 1;
+        if (sec > 0 && sec % 4 === 0) Alerts.notify();
+        document.getElementById('call-countdown-text').textContent = `${sec}s`;
+        document.getElementById('call-countdown-bar').style.width = `${(sec / 25) * 100}%`;
+        if (sec <= 0) {
+          rejectIncomingRide();
+        }
+      }, 1000);
+    }
+
+    function rejectIncomingRide() {
+      if (state.callCountdownInterval) clearInterval(state.callCountdownInterval);
+      document.getElementById('incoming-call-modal').classList.add('hidden');
+      if (state.pendingIncomingRide) state.rejectedRides[state.pendingIncomingRide.id] = 1; // expirou/recusou: volta ao radar
+      state.pendingIncomingRide = null;
+    }
+
+    function acceptIncomingRide() {
+      if (state.callCountdownInterval) clearInterval(state.callCountdownInterval);
+      document.getElementById('incoming-call-modal').classList.add('hidden');
+      if (!state.pendingIncomingRide) return;
+
+      state.activeRide = { ...state.pendingIncomingRide, status: 'accepted' };
+      state.pendingIncomingRide = null;
+      navigateTo('main');
+      updateActiveRideUI();
+      refreshMainBottomPanel();
+      startBoatNavigationAnimation();
+      publishMqtt('ride_accepted', { rideId: state.activeRide.id, boatName: state.boatName, driverId: state.userId });
+      showToast('Viagem aceita! Navegando para o ponto de coleta.', 'fa-ship');
+    }
+
+    // 6. MODO DEMONSTRAÇÃO AUTOMÁTICO (BOT ~15s)
+    function triggerDemoBotAction() {
+      if (state.botRunning) return;
+      state.botRunning = true;
+      const btn = document.getElementById('btn-demo-bot');
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+      showToast('🤖 Robô acionado: executando a simulação completa…', 'fa-robot');
+
+      quickSwitchRole('produtor');
+      navigateTo('main');
+      showToast('Bot: Produtor solicitando coleta de 120 paneiros...', 'fa-robot');
+
+      setTimeout(() => {
+        document.getElementById('paneiros-slider').value = 120;
+        updateFreightCalculation();
+        requestAcaiRide();
+      }, 1500);
+
+      setTimeout(() => {
+        if (!state.activeRide) return;
+        state.activeRide.status = 'accepted';
+        updateActiveRideUI();
+        startBoatNavigationAnimation();
+        showToast('Bot: B/M Açaí Forte I aceitou e iniciou navegação!', 'fa-ship');
+      }, 4500);
+
+      setTimeout(() => {
+        if (state.activeRide) {
+          completeActiveRide();
+        }
+        state.botRunning = false;
+        btn.innerHTML = '<i class="fa-solid fa-robot"></i>';
+      }, 14500);
+    }
+
+    // 7. AVALIAÇÃO 5 ESTRELAS & CONFIGURAÇÕES
+    function setRating(val) {
+      document.getElementById('selected-rating-value').value = val;
+      const labels = {
+        1: '1.0 — Atraso ou problema na carga',
+        2: '2.0 — Precisa melhorar a pontualidade',
+        3: '3.0 — Viagem regular pelo rio',
+        4: '4.0 — Muito bom! Transporte seguro',
+        5: '5.0 — Excelente! Carga intacta e pontual'
+      };
+      document.getElementById('rating-label-text').textContent = labels[val];
+      for (let i = 1; i <= 5; i++) {
+        const star = document.getElementById(`star-${i}`);
+        star.className = i <= val
+          ? 'fa-solid fa-star cursor-pointer hover:scale-110 transition text-amber-400'
+          : 'fa-regular fa-star cursor-pointer hover:scale-110 transition text-gray-300';
+      }
+    }
+
+    function toggleRatingTag(btn) {
+      btn.classList.toggle('bg-forest-dark');
+      btn.classList.toggle('text-white');
+    }
+
+    function submitRating() {
+      document.getElementById('rating-modal').classList.add('hidden');
+      showToast('Avaliação enviada! Obrigado por fortalecer a cadeia do açaí.', 'fa-star');
+    }
+
+    function saveAuthAndEnter() {
+      const name = document.getElementById('auth-name-input').value.trim();
+      if (name) state.userName = name;
+      quickSwitchRole(state.role);
+      navigateTo('main');
+      showToast(`Bem-vindo(a), ${state.userName}!`, 'fa-circle-check');
+    }
+
+    function saveBoatSetup() {
+      state.boatName = document.getElementById('boat-name-input').value.trim() || 'B/M Açaí Forte I';
+      state.boatCapacity = document.getElementById('boat-capacity-select').value.split(' ')[0];
+      document.getElementById('driver-boat-title').textContent = `${state.boatName} (Cap. ${state.boatCapacity})`;
+      quickSwitchRole('entregador');
+      navigateTo('main');
+      showToast('Embarcação atualizada e pronta para fretes!', 'fa-ship');
+    }
+
+    function copyPixCode() {
+      const tempInput = document.createElement('input');
+      tempInput.value = '00020126580014br.gov.bcb.pix0136rotacai-barcarena-pa';
+      document.body.appendChild(tempInput);
+      tempInput.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempInput);
+      showToast('Chave PIX Copia e Cola copiada!', 'fa-copy');
+    }
+
+    function confirmPaymentAndRate() {
+      navigateTo('main');
+      document.getElementById('rating-modal').classList.remove('hidden');
+    }
+
+    // 8. CONECTIVIDADE MULTI-APARELHOS VIA MQTT
+
+    // ======================================================================
+    // SAUDAÇÃO, CONTAS (celular + PIN), TAXAS, ADMIN E PUBLICIDADE
+    // ======================================================================
+    const ADMIN_PIN = '2026', USERS_KEY = 'rotacai_users', LEDGER_KEY = 'rotacai_ledger', ADS_KEY = 'rotacai_ads', ADSTATS_KEY = 'rotacai_adstats', WD_KEY = 'rotacai_wd';
+    const lsGet = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v === null || v === undefined ? d : v; } catch (e) { return d; } };
+    const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* cheio */ } };
+    const hash32 = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); };
+    const onlyDigits = s => (s || '').replace(/\D/g, '');
+    const brl = n => 'R$ ' + (n || 0).toFixed(2).replace('.', ',');
+    const kmFmt = n => n.toFixed(1).replace('.', ',');
+    const parseBRL = s => parseFloat(String(s).replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+    // Taxa fictícia no estilo Uber/99: 20% do frete + R$ 2,00 de taxa de serviço (mínimo R$ 3,00)
+    const calcFee = amount => Math.max(3, +(amount * 0.20 + 2).toFixed(2));
+
+    function setGreeting() {
+      const h = new Date().getHours();
+      const g = h < 5 ? 'Boa madrugada' : h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
+      const e = document.getElementById('splash-greeting'); if (e) e.textContent = g + '!';
+    }
+
+    function registerUser() {
+      const v = id => document.getElementById(id).value.trim();
+      const name = v('auth-name-input'), phone = onlyDigits(v('auth-phone-input')), pin = v('auth-pin-input');
+      if (!name) return showToast('Informe seu nome.', 'fa-triangle-exclamation');
+      if (phone.length < 10 || phone.length > 11) return showToast('Informe o celular com DDD.', 'fa-triangle-exclamation');
+      if (!/^\d{4}$/.test(pin)) return showToast('O PIN deve ter 4 dígitos.', 'fa-triangle-exclamation');
+      if (pin !== v('auth-pin2-input')) return showToast('Os PINs não conferem.', 'fa-triangle-exclamation');
+      const users = lsGet(USERS_KEY, {}), uid = 'u' + hash32(phone);
+      if (users[phone] || DB.get('users')[uid]) return showToast('Este número já tem cadastro. Faça login.', 'fa-triangle-exclamation');
+      const rec = { name, role: document.getElementById('auth-role-select').value, community: document.getElementById('auth-community-select').value, pin: hash32(phone + pin), ts: Date.now() };
+      users[phone] = rec; lsSet(USERS_KEY, users); DB.set('users/' + uid, rec); // a conta vale em todos os aparelhos
+      document.getElementById('login-phone').value = phone;
+      showToast('Cadastro concluído! Entre com seu PIN.', 'fa-circle-check');
+      navigateTo('login');
+    }
+    function loginUser() {
+      const phone = onlyDigits(document.getElementById('login-phone').value), pin = document.getElementById('login-pin').value.trim();
+      const uid = 'u' + hash32(phone), u = DB.get('users')[uid] || lsGet(USERS_KEY, {})[phone];
+      if (!u || u.pin !== hash32(phone + pin)) return showToast(DB.live() ? 'Celular ou PIN incorreto.' : 'Celular ou PIN incorreto. Se a conta é de outro aparelho, aguarde a conexão e tente de novo.', 'fa-triangle-exclamation');
+      if (!DB.get('users')[uid]) DB.set('users/' + uid, u);
+      state.walletQuietUntil = Date.now() + 4000;
+      state.phone = phone; state.userName = u.name; state.userId = 'u' + hash32(phone);
+      updateMarketBadge();
+      document.getElementById('login-pin').value = '';
+      state.accountType = u.role || 'produtor';
+      quickSwitchRole(state.accountType === 'entregador' ? 'entregador' : 'produtor'); navigateTo('main');
+      if (state.accountType === 'vendedor' || state.accountType === 'comprador') openMarket();
+      showToast(`Bem-vindo(a), ${u.name}!`, 'fa-circle-check');
+    }
+
+    // ---------- ADMIN ----------
+    function mqttRaw(sub, data, retain) {
+      if (mqttClient && mqttClient.connected) mqttClient.publish(`rotacai/barcarena/${state.room}/${sub}`, JSON.stringify(Object.assign({}, data, { senderId: state.clientId })), { retain: !!retain });
+    }
+    // O ícone de ADM é FIXO. Só some quando OUTRO aparelho está logado como ADM (batimento a cada 20 s).
+    // Mensagens antigas guardadas no broker (ts velho) são ignoradas, então não há liga-desliga.
+    const ADMIN_TOPIC = 'rotacai/barcarena/_global/admin', ADMIN_LEASE = 90000, ADMIN_SESSION_KEY = 'rotacai_admin_session';
+    function publishAdmin(active) {
+      if (mqttClient && mqttClient.connected) mqttClient.publish(ADMIN_TOPIC, JSON.stringify({ active, ts: Date.now(), senderId: state.clientId }), { retain: true });
+    }
+    function onAdminMessage(msg) {
+      const fresh = msg.active && typeof msg.ts === 'number' && (Date.now() - msg.ts) < ADMIN_LEASE;
+      state.adminOther = fresh ? { seen: Date.now() } : null;
+      updateAdminFab();
+    }
+    function updateAdminFab() {
+      const fab = document.getElementById('admin-fab'); if (!fab) return;
+      const other = !state.isAdmin && state.adminOther && (Date.now() - state.adminOther.seen) < ADMIN_LEASE;
+      const want = other ? 'none' : 'flex';
+      if (fab.style.display !== want) fab.style.display = want;
+    }
+    function startAdminBeat() {
+      clearInterval(state.adminTimer); publishAdmin(true);
+      state.adminTimer = setInterval(() => publishAdmin(true), 20000);
+    }
+    function adminFabClick() {
+      if (state.isAdmin) return document.getElementById('admin-choice').classList.remove('hidden');
+      document.getElementById('admin-pin-input').value = ''; document.getElementById('admin-pin-modal').classList.remove('hidden');
+    }
+    function adminLogin() {
+      if (document.getElementById('admin-pin-input').value !== ADMIN_PIN) return showToast('PIN incorreto.', 'fa-triangle-exclamation');
+      document.getElementById('admin-pin-modal').classList.add('hidden');
+      state.isAdmin = true; state.ads = lsGet(ADS_KEY, []);
+      try { localStorage.setItem(ADMIN_SESSION_KEY, '1'); } catch (e) {}
+      startAdminBeat(); publishAds();
+      updateAdminFab(); document.getElementById('admin-choice').classList.remove('hidden');
+    }
+    function restoreAdminSession() { // o ADM continua logado ao recarregar a página
+      let on = false; try { on = localStorage.getItem(ADMIN_SESSION_KEY) === '1'; } catch (e) {}
+      if (!on) return;
+      state.isAdmin = true; state.ads = lsGet(ADS_KEY, []); startAdminBeat(); updateAdminFab();
+    }
+    function adminLogout() {
+      state.isAdmin = false; clearInterval(state.adminTimer);
+      try { localStorage.removeItem(ADMIN_SESSION_KEY); } catch (e) {}
+      publishAdmin(false);
+      document.getElementById('admin-dash').classList.add('hidden'); menuSuperior(false); updateAdminFab();
+      showToast('Você saiu da conta de administrador.', 'fa-right-from-bracket');
+    }
+    function menuSuperior(on) {
+      const s = document.getElementById('control-sidebar'); s.classList.toggle('hidden', !on);
+      if (on) { document.getElementById('control-sidebar-body').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    }
+    function adminChoose(w) {
+      document.getElementById('admin-choice').classList.add('hidden');
+      if (w === 'menu') menuSuperior(true); else openAdmin();
+    }
+    function openAdmin() { document.getElementById('admin-dash').classList.remove('hidden'); renderAdmin(); }
+    function recordTx(tx) { DB.set('ledger/' + tx.id, tx); }
+    const BANKS = ['Itaú', 'Bradesco', 'Caixa', 'Nubank', 'Banco do Brasil', 'Santander', 'Inter', 'C6 Bank', 'Sicredi', 'Mercado Pago'];
+    function saveBank() {
+      const g = id => document.getElementById(id).value.trim(), old = DB.get('config').bank;
+      const agency = onlyDigits(g('bk-ag')), account = onlyDigits(g('bk-ac'));
+      if (agency.length < 3 || account.length < 3) return showToast('Informe agência e conta (números fictícios).', 'fa-triangle-exclamation');
+      DB.set('config/bank', { bank: g('bk-bank'), agency, account, cycle: parseInt(g('bk-cycle')), last: old ? old.last : Date.now() });
+      showToast('Conta conectada (fictícia)!', 'fa-building-columns');
+    }
+    // repasse da arrecadação (taxas desde o último repasse) para a conta fictícia
+    function payoutNow(auto) {
+      const cfg = DB.get('config').bank; if (!cfg) return;
+      const amt = +lsGet(LEDGER_KEY, []).filter(t => t.ts > cfg.last).reduce((s, t) => s + t.fee, 0).toFixed(2);
+      if (amt > 0) {
+        const id = 'p' + Date.now();
+        DB.set('payouts/' + id, { id, ts: Date.now(), amount: amt, bank: cfg.bank, acc: '••' + cfg.account.slice(-3), cycle: cfg.cycle });
+        DB.inc('wallets/admin', -amt, ADMIN_BASE);
+      }
+      DB.set('config/bank', Object.assign({}, cfg, { last: Date.now() }));
+      showToast(amt > 0 ? `Repasse de ${brl(amt)} enviado para ${cfg.bank}.` : 'Sem arrecadação a repassar.', 'fa-building-columns');
+    }
+    function checkPayout() { const c = DB.get('config').bank; if (c && Date.now() >= c.last + c.cycle * 864e5) payoutNow(true); }
+    function adminWithdraw() {
+      const v = parseBRL(prompt('Valor da retirada do caixa (R$):') || '0');
+      if (v > 0) { lsSet(WD_KEY, lsGet(WD_KEY, 0) + v); DB.inc('wallets/admin', -v, ADMIN_BASE); renderAdmin(); }
+    }
+
+    // ---------- PUBLICIDADE ----------
+    const adRevenue = (a, s) => s ? (s.imp / 1000) * a.cpm + s.clk * a.cpc : 0; // modelo de anúncios de sites: CPM + CPC
+    function publishAds() {
+      const n = Date.now();
+      state.ads = (state.ads || []).filter(a => a.end > n); lsSet(ADS_KEY, state.ads);
+      mqttRaw('ad', { ads: state.ads.map(a => ({ id: a.id, img: a.img, title: a.title, end: a.end })) }, true);
+    }
+    function uploadAd() {
+      const f = document.getElementById('ad-file').files[0];
+      if (!f) return showToast('Escolha uma imagem.', 'fa-triangle-exclamation');
+      if (!/^image\/(jpeg|png|webp)$/.test(f.type)) return showToast('Use JPG, PNG ou WebP.', 'fa-triangle-exclamation');
+      if (f.size > 4 * 1024 * 1024) return showToast('Imagem acima de 4 MB.', 'fa-triangle-exclamation');
+      if ((lsGet(ADS_KEY, [])).length >= 3) return showToast('Máximo de 3 anúncios ativos.', 'fa-triangle-exclamation');
+      const r = new FileReader();
+      r.onload = () => {
+        const im = new Image();
+        im.onload = () => {
+          const w = Math.min(640, im.width), h = Math.round(im.height * w / im.width), cv = document.createElement('canvas');
+          cv.width = w; cv.height = h; cv.getContext('2d').drawImage(im, 0, 0, w, h);
+          const num = id => parseFloat(document.getElementById(id).value.replace(',', '.')) || 0;
+          const ads = lsGet(ADS_KEY, []);
+          ads.push({ id: 'ad' + Date.now(), img: cv.toDataURL('image/jpeg', 0.72), title: document.getElementById('ad-title').value.trim() || 'Anúncio', start: Date.now(), end: Date.now() + Math.max(1, num('ad-hours')) * 3600e3, cpm: num('ad-cpm') || 6, cpc: num('ad-cpc') || 0.45 });
+          lsSet(ADS_KEY, ads); state.ads = ads; publishAds(); renderAdmin(); showToast('Anúncio publicado!', 'fa-bullhorn');
+        };
+        im.src = r.result;
+      };
+      r.readAsDataURL(f);
+    }
+    function removeAd(id) { state.ads = lsGet(ADS_KEY, []).filter(a => a.id !== id); lsSet(ADS_KEY, state.ads); publishAds(); renderAdmin(); }
+    function mergeAdStats(b) {
+      const st = lsGet(ADSTATS_KEY, {});
+      Object.keys(b).forEach(k => { const o = st[k] || { imp: 0, clk: 0, ms: 0 }; st[k] = { imp: o.imp + b[k].imp, clk: o.clk + b[k].clk, ms: o.ms + b[k].ms }; });
+      lsSet(ADSTATS_KEY, st);
+      if (!document.getElementById('admin-dash').classList.contains('hidden')) renderAdmin();
+    }
+    // "IA" de posicionamento: bandit epsilon-greedy que aprende qual faixa (topo/canto) tem melhor CTR, sempre pequena e longe dos botões principais
+    const AD_SLOTS = { topo: 'top:76px;left:50%;transform:translateX(-50%);width:min(300px,84vw);height:48px', canto: 'top:132px;right:8px;left:auto;transform:none;width:110px;height:60px' };
+    function pickSlot() {
+      const s = state.slotStats = state.slotStats || { topo: { imp: 0, clk: 0 }, canto: { imp: 0, clk: 0 } };
+      if (Math.random() < 0.2) return Math.random() < 0.5 ? 'topo' : 'canto';
+      return Object.keys(s).sort((a, b) => (s[b].clk + 1) / (s[b].imp + 20) - (s[a].clk + 1) / (s[a].imp + 20))[0];
+    }
+    let adTick = 0, adCur = null;
+    function addBatch(key, f) { const b = state.adBatch = state.adBatch || {}; const o = b[key] = b[key] || { imp: 0, clk: 0, ms: 0 }; f(o); }
+    function adLoop() {
+      const el = document.getElementById('ad-banner'), n = Date.now();
+      const ads = (state.ads || []).filter(a => a.end > n);
+      const vis = ads.length && state.phone && !document.getElementById('screen-main').classList.contains('hidden') && document.getElementById('admin-dash').classList.contains('hidden');
+      if (!vis) { el.classList.add('hidden'); adCur = null; return; }
+      if (!adCur || adTick % 20 === 0) {
+        const a = ads[Math.floor(adTick / 20) % ads.length], slot = pickSlot();
+        adCur = { id: a.id, slot };
+        document.getElementById('ad-img').src = a.img; el.style.cssText = AD_SLOTS[slot]; el.classList.remove('hidden');
+        addBatch(a.id, o => o.imp++); addBatch('slot:' + slot, o => o.imp++); state.slotStats[slot].imp++;
+      }
+      addBatch(adCur.id, o => o.ms += 1000); adTick++;
+    }
+    function adClick() {
+      if (!adCur) return;
+      addBatch(adCur.id, o => o.clk++); addBatch('slot:' + adCur.slot, o => o.clk++); state.slotStats[adCur.slot].clk++;
+      showToast('Anúncio aberto', 'fa-bullhorn');
+    }
+    function flushAdStats() {
+      const b = state.adBatch; if (!b || !Object.keys(b).length) return;
+      state.adBatch = {};
+      if (state.isAdmin) mergeAdStats(b); else mqttRaw('ad_stats', { b });
+    }
+
+    // ---------- DASHBOARD ----------
+    function renderAdmin() {
+      const L = lsGet(LEDGER_KEY, []), ads = lsGet(ADS_KEY, []), st = lsGet(ADSTATS_KEY, {}), wd = lsGet(WD_KEY, 0);
+      const gross = L.reduce((s, t) => s + t.gross, 0), fees = L.reduce((s, t) => s + t.fee, 0);
+      const adRev = ads.reduce((s, a) => s + adRevenue(a, st[a.id]), 0), total = fees + adRev, caixa = total - wd;
+      const group = (key, val) => { const m = {}; L.forEach(t => { const k = t[key] || '—'; m[k] = (m[k] || 0) + val(t); }); return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 5); };
+      const rows = arr => arr.length ? arr.map(([k, v]) => `<div class="flex justify-between text-xs py-1 border-b border-white/10"><span class="truncate pr-2">${k}</span><b>${brl(v)}</b></div>`).join('') : '<p class="text-xs text-white/50">Sem dados ainda.</p>';
+      const last = L.slice(-7), mx = Math.max(1, ...last.map(t => t.fee));
+      const card = (t, v, c) => `<div class="rounded-2xl p-3 ${c}"><p class="text-[10px] uppercase font-extrabold opacity-80">${t}</p><p class="text-xl font-extrabold">${v}</p></div>`;
+      const slotTxt = ['topo', 'canto'].map(s => { const x = st['slot:' + s] || { imp: 0, clk: 0 }; return `${s}: CTR ${(x.imp ? x.clk / x.imp * 100 : 0).toFixed(1)}% (${x.imp} exib.)`; }).join(' • ');
+      const adCards = ads.map(a => { const s = st[a.id] || { imp: 0, clk: 0, ms: 0 }, left = Math.max(0, a.end - Date.now()) / 3600e3;
+        return `<div class="flex gap-2 bg-white/10 rounded-2xl p-2 mb-2"><img src="${a.img}" class="w-24 h-14 object-cover rounded-xl"/><div class="flex-1 text-[11px]"><b>${a.title}</b><br>Restam ${left.toFixed(1)} h • ${s.imp} exib. • ${s.clk} cliques (${(s.imp ? s.clk / s.imp * 100 : 0).toFixed(1)}%)<br>Tempo no ar: ${(s.ms / 60000).toFixed(1)} min • Retorno: <b>${brl(adRevenue(a, s))}</b></div><button onclick="removeAd('${a.id}')" class="text-red-300"><i class="fa-solid fa-trash"></i></button></div>`; }).join('') || '<p class="text-xs text-white/50">Nenhum anúncio ativo.</p>';
+      const inp = 'w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20 text-xs text-white';
+      const cfg = DB.get('config').bank, pays = Object.values(DB.get('payouts')).sort((a, b) => b.ts - a.ts).slice(0, 4);
+      const arrec = +L.filter(t => t.ts > (cfg ? cfg.last : 0)).reduce((s, t) => s + t.fee, 0).toFixed(2);
+      const nextTxt = cfg ? new Date(cfg.last + cfg.cycle * 864e5).toLocaleDateString('pt-BR') : '—';
+      const bankBlock = `<h3 class="mt-5 mb-1 text-sm font-extrabold">🏦 Conta bancária e repasse (fictício)</h3><div class="bg-white/5 rounded-2xl p-3 space-y-2">
+        <p class="text-[10px] text-amber-300">Dados de demonstração. Não informe dados bancários reais.</p>
+        <select id="bk-bank" class="${inp}">${BANKS.map(b => `<option style="color:#000" ${cfg && cfg.bank === b ? 'selected' : ''}>${b}</option>`).join('')}</select>
+        <div class="grid grid-cols-2 gap-2"><input id="bk-ag" placeholder="Agência" value="${cfg ? cfg.agency : ''}" class="${inp}"/><input id="bk-ac" placeholder="Conta" value="${cfg ? cfg.account : ''}" class="${inp}"/></div>
+        <select id="bk-cycle" class="${inp}"><option style="color:#000" value="15" ${cfg && cfg.cycle === 15 ? 'selected' : ''}>Repasse a cada 15 dias</option><option style="color:#000" value="30" ${!cfg || cfg.cycle === 30 ? 'selected' : ''}>Repasse a cada 30 dias</option></select>
+        <button onclick="saveBank()" class="w-full py-2.5 rounded-xl bg-amber-400 text-black font-extrabold text-sm">${cfg ? 'Atualizar conta' : 'Conectar conta'}</button>
+        ${cfg ? `<p class="text-[11px]">Conectada: <b>${cfg.bank}</b> • ag ${cfg.agency} • conta ••${cfg.account.slice(-3)}<br>Arrecadação a repassar: <b>${brl(arrec)}</b> • Próximo repasse: <b>${nextTxt}</b></p><button onclick="payoutNow(false)" class="w-full py-2 rounded-xl bg-white/15 text-xs font-bold">Repassar agora</button>` : ''}
+        ${pays.map(p => `<p class="text-[10px] text-white/70">• ${new Date(p.ts).toLocaleDateString('pt-BR')} — ${brl(p.amount)} para ${p.bank} (${p.acc})</p>`).join('')}</div>`;
+      document.getElementById('admin-body').innerHTML = `
+        <div class="flex items-center justify-between mb-3"><div><p class="text-[10px] uppercase tracking-widest text-amber-300 font-extrabold">Rotaçaí • Painel do ADM</p><h2 class="text-xl font-extrabold">Dashboard</h2></div>
+          <div class="flex gap-2"><button onclick="document.getElementById('admin-dash').classList.add('hidden')" class="px-3 py-2 rounded-xl bg-white/15 text-xs font-bold">Fechar</button><button onclick="adminLogout()" class="px-3 py-2 rounded-xl bg-red-500 text-xs font-bold"><i class="fa-solid fa-right-from-bracket"></i> Sair</button></div></div>
+        <div class="grid grid-cols-2 gap-2">
+          ${card('Viagens pagas', L.filter(t => t.kind !== 'venda').length, 'bg-emerald-600/80')}${card('Vendas (comércio)', L.filter(t => t.kind === 'venda').length, 'bg-teal-600/80')}
+          ${card('Saldo do ADM', brl(walBal('admin')), 'bg-amber-500/90 text-black')}${card('Receita total', brl(total), 'bg-fuchsia-700/80')}
+          ${card('Taxas (viagens e vendas)', brl(fees), 'bg-blue-600/80')}${card('Publicidade', brl(adRev), 'bg-purple-600/80')}
+        </div>
+        <p class="text-[10px] text-white/60 mt-2">Volume bruto movimentado: ${brl(gross)} • Retiradas: ${brl(wd)} • Taxas fictícias: viagens 20% + R$ 2,00 (modelo Uber/99) • vendas R$ 3,50 fixos <button onclick="adminWithdraw()" class="underline text-amber-300">registrar retirada</button></p>
+        <h3 class="mt-4 mb-1 text-sm font-extrabold">Taxas por viagem (últimas)</h3>
+        <div class="flex items-end gap-1 h-20 bg-white/5 rounded-2xl p-2">${last.map(t => `<div class="flex-1 rounded-t bg-amber-400" style="height:${Math.max(8, t.fee / mx * 100)}%" title="${brl(t.fee)}"></div>`).join('') || '<p class="text-xs text-white/50">Aguardando pagamentos…</p>'}</div>
+        <div class="grid grid-cols-2 gap-3 mt-4"><div><h3 class="text-sm font-extrabold mb-1">Clientes</h3>${rows(group('client', t => t.gross))}</div><div><h3 class="text-sm font-extrabold mb-1">Fornecedores</h3>${rows(group('driver', t => t.gross - t.fee))}</div></div>
+        <h3 class="mt-5 mb-1 text-sm font-extrabold"><i class="fa-solid fa-bullhorn text-amber-300"></i> Publicidade</h3>
+        <div class="bg-white/5 rounded-2xl p-3 space-y-2">
+          <input id="ad-file" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="${inp}" />
+          <p class="text-[10px] text-white/50">JPG, PNG ou WebP até 4 MB. Ideal: 640×200 px (banner).</p>
+          <input id="ad-title" placeholder="Nome do anunciante" class="${inp}" />
+          <div class="grid grid-cols-3 gap-2"><input id="ad-hours" value="24" placeholder="Horas no ar" class="${inp}"/><input id="ad-cpm" value="6" placeholder="CPM R$" class="${inp}"/><input id="ad-cpc" value="0,45" placeholder="CPC R$" class="${inp}"/></div>
+          <p class="text-[10px] text-white/50">Duração (h) • CPM (R$ por mil exibições) • CPC (R$ por clique). Retorno = exibições/1000 × CPM + cliques × CPC.</p>
+          <button onclick="uploadAd()" class="w-full py-2.5 rounded-xl bg-amber-400 text-black font-extrabold text-sm">Publicar anúncio</button>
+        </div>
+        <div class="mt-3">${adCards}</div>
+        <p class="text-[10px] text-white/60">IA de posicionamento (aprende o melhor lugar sem cobrir botões): ${slotTxt}</p>
+        ${bankBlock}
+        <button onclick="toggleWaterDiag()" class="mt-4 w-full py-2.5 rounded-xl bg-white/15 text-xs font-bold"><i class="fa-solid fa-water"></i> Diagnóstico: ver no mapa onde o barco pode navegar</button>`;
+    }
+    let waterOv = null;
+    function toggleWaterDiag() {
+      if (!WATER.ready) return showToast('Rios ainda carregando…', 'fa-spinner');
+      if (waterOv) { map.removeLayer(waterOv); waterOv = null; }
+      else {
+        const cv = document.createElement('canvas'); cv.width = WATER.W; cv.height = WATER.H;
+        const x = cv.getContext('2d'), d = x.createImageData(WATER.W, WATER.H);
+        for (let i = 0; i < WATER.main.length; i++) if (WATER.main[i]) { d.data[i * 4 + 1] = 120; d.data[i * 4 + 2] = 255; d.data[i * 4 + 3] = 110; }
+        x.putImageData(d, 0, 0);
+        waterOv = L.imageOverlay(cv.toDataURL(), [[wPxToLat(WATER.y0 * 256), wPxToLng(WATER.x0 * 256)], [wPxToLat(WATER.y0 * 256 + WATER.H * WATER.S), wPxToLng(WATER.x0 * 256 + WATER.W * WATER.S)]]).addTo(map);
+      }
+      document.getElementById('admin-dash').classList.add('hidden');
+      showToast(waterOv ? 'Azul = área navegável do barco.' : 'Máscara removida.', 'fa-water');
+    }
+
+
+    // ======================================================================
+    // TEMPO REAL (Firebase Realtime Database) — cole sua configuração aqui.
+    // Sem configuração, tudo funciona em modo local (este navegador).
+    // ======================================================================
+    const FIREBASE_CONFIG = window.ROTACAI_CONFIG || { apiKey: '', authDomain: '', databaseURL: '', projectId: '', appId: '' };
+    const DB = (() => {
+      const L = {}, cache = {}, att = {}, pend = {}; let fb = null, mq = null;
+      const bc = window.BroadcastChannel ? new BroadcastChannel('rotacai_db') : null, key = c => 'rotacai_db_' + c;
+      const col = c => cache[c] || (cache[c] = lsGet(key(c), {}));
+      const emit = c => (L[c] || []).forEach(f => f(col(c)));
+      const save = c => { lsSet(key(c), col(c)); emit(c); if (bc) bc.postMessage(c); };
+      const later = c => { if (pend[c]) return; pend[c] = setTimeout(() => { pend[c] = 0; save(c); }, 60); };
+      const attach = c => { if (fb && !att[c]) { att[c] = 1; fb.ref('rotacai/' + c).on('value', s => { cache[c] = s.val() || {}; emit(c); }); } };
+      if (bc) bc.onmessage = e => { cache[e.data] = lsGet(key(e.data), {}); emit(e.data); };
+      const load = u => new Promise((r, j) => { const s = document.createElement('script'); s.src = u; s.onload = r; s.onerror = j; document.head.appendChild(s); });
+      // Sincronização entre aparelhos: cada registro vai para um tópico MQTT retido (rede pública, sem configuração).
+      const T = 'rotacai/barcarena/db/';
+      const pub = (c, id, v) => { if (mq && !fb) mq.publish(T + c + '/' + id, v == null ? '' : JSON.stringify({ s: state.clientId, v }), { retain: c !== 'feed' }); };
+      return {
+        live: () => !!fb || !!(mq && mq.connected),
+        async init() {
+          if (!FIREBASE_CONFIG.databaseURL) return;
+          try { const b = 'https://www.gstatic.com/firebasejs/10.12.2/'; await load(b + 'firebase-app-compat.js'); await load(b + 'firebase-database-compat.js'); firebase.initializeApp(FIREBASE_CONFIG); fb = firebase.database(); Object.keys(L).forEach(attach); }
+          catch (e) { console.error('Firebase indisponível, usando rede MQTT', e); }
+        },
+        useMqtt(client) { mq = client; },
+        subscribe() { if (mq) mq.subscribe(T + '#'); },
+        fromMqtt(topic, payload) {
+          if (fb) return;
+          const [c, id] = topic.slice(T.length).split('/'); if (!c || !id) return;
+          const txt = payload.toString(), o = col(c);
+          if (!txt) delete o[id];
+          else { try { const m = JSON.parse(txt); if (m.s === state.clientId) return; o[id] = m.v; } catch (e) { return; } }
+          later(c);
+        },
+        on(c, f) { (L[c] = L[c] || []).push(f); if (fb) attach(c); else f(col(c)); },
+        get: c => col(c),
+        inc(p, d, base) {
+          const [c, id] = p.split('/'), r2 = x => +x.toFixed(2);
+          if (fb) return fb.ref('rotacai/' + p).transaction(v => r2((v == null ? base : v) + d));
+          const o = col(c); o[id] = r2((o[id] == null ? base : o[id]) + d); pub(c, id, o[id]); save(c);
+        },
+        set(p, v) {
+          const [c, id] = p.split('/');
+          if (fb) return fb.ref('rotacai/' + p).set(v);
+          const o = col(c); if (v === null) delete o[id]; else o[id] = v; pub(c, id, v); save(c);
+        }
+      };
+    })();
+
+    // ======================================================================
+    // COMÉRCIO DO AÇAÍ LOCAL (marketplace com bots)
+    // Preço-base: rasa na safra ≈ R$ 100 em Belém (Diário do Pará); varia por grão, tipo, maturação e cor.
+    // ======================================================================
+    const MKT_BASE = 95;
+    const MKT_PAY = { pix: ['Pix', 0.0099], debito: ['Débito', 0.015], credito: ['Crédito', 0.035], dinheiro: ['Dinheiro', 0] };
+    const BOT_SELLERS = [['Seu Raimundo do Combu', 'Ilha do Combu'], ['Dona Socorro', 'Abaetetuba'], ['Mestre Cabano', 'Barcarena'], ['Tia Nazaré', 'Igarapé-Miri'], ['Zeca das Onças', 'Ilha das Onças'], ['Dona Maria do Furo', 'Furo Grande'], ['Seu Benedito', 'Cametá'], ['Joana da Trambioca', 'Ilha Trambioca']];
+    const BOT_BUYERS = ['Batedeira da Dona Ló 🤖', 'Açaí do Seu Chicão 🤖', 'Pedro Batedor 🤖', 'Mercadinho da Rita 🤖', 'Açaí da Tia Lúcia 🤖'];
+    const GRAINS = ['Graúdo', 'Médio', 'Miúdo'], QUALS = ['Extra', 'Tipo A', 'Tipo B'];
+    const BOT_LISTINGS = BOT_SELLERS.map(([n, o], i) => {
+      const g = GRAINS[i % 3], q = QUALS[(i * 2) % 3], m = i % 5 === 4 ? 'De vez' : 'Maduro', c = i % 4 === 3 ? 'Branco (tinga)' : 'Preto (roxo)';
+      const mod = (g === 'Graúdo' ? 1.08 : g === 'Miúdo' ? 0.95 : 1) * (q === 'Extra' ? 1.12 : q === 'Tipo B' ? 0.92 : 1) * (c[0] === 'B' ? 1.1 : 1) * (m === 'De vez' ? 0.9 : 1);
+      const base = Math.round(MKT_BASE * mod * (0.94 + ((i * 13) % 12) / 100));
+      return { id: 'bot_l' + i, bot: true, sellerId: 'bot_s' + i, seller: n + ' 🤖', origin: o, rating: +(4 + ((i * 37) % 10) / 10).toFixed(1), grain: g, quality: q, maturity: m, color: c, base, price: base, stock: 6 + (i * 5) % 14, max: 20 };
+    });
+    const allListings = () => Object.values(DB.get('listings')).filter(l => l && l.stock > 0).concat(BOT_LISTINGS.filter(l => l.stock > 0));
+    // IA do bot: nota por qualidade, maturação, reputação e preço
+    const botScore = l => ({ Extra: 1, 'Tipo A': .7, 'Tipo B': .4 }[l.quality]) * .35 + (l.maturity === 'Maduro' ? 1 : .6) * .2 + (l.rating || 4.5) / 5 * .2 + (1 - l.price / (MKT_BASE * 1.5)) * .25;
+    // preço dinâmico: estoque baixo sobe o preço, estoque alto desce
+    function mktTick() { BOT_LISTINGS.forEach(l => { if (Math.random() < .5) l.stock = Math.min(l.max, l.stock + 1); l.price = Math.round(l.base * (1 + .15 * (1 - l.stock / l.max)) * (0.99 + Math.random() * .02)); }); if (!document.getElementById('market').classList.contains('hidden')) renderMarket(); }
+    const feedAdd = text => DB.set('feed/f' + Date.now() + Math.floor(Math.random() * 99), { ts: Date.now(), text });
+    const opts = a => a.map(x => `<option>${x}</option>`).join('');
+    const chip = (t, c) => `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${c}">${t}</span>`;
+
+
+    // ======================================================================
+    // SALDO FICTÍCIO (carteira): todos começam com R$ 480,37; ADM com R$ 3.000,00
+    // Compra debita o comprador; venda/frete credita o vendedor/entregador já sem a taxa; a taxa vai para o saldo do ADM.
+    // ======================================================================
+    const WALLET_BASE = 480.37, ADMIN_BASE = 3000;
+    const baseFor = id => { if (id === 'admin') return ADMIN_BASE; const drv = id === state.userId ? state.accountType === 'entregador' : (DB.get('users')[id] || {}).role === 'entregador'; return drv ? 0 : WALLET_BASE; }; // entregador começa com R$ 0
+    const walBal = id => { const v = DB.get('wallets')[id]; return v == null ? baseFor(id) : v; };
+    const myBal = () => state.userId ? walBal(state.userId) : WALLET_BASE;
+    function updateWalletUI() {
+      const b = document.getElementById('btn-wallet'); if (!b) return;
+      const bal = myBal();
+      if (state.userId && state.lastBalUser === state.userId && state.lastBal != null && bal > state.lastBal + 0.001 && Date.now() > state.walletQuietUntil) Alerts.cash(); // dinheiro entrou no caixa
+      state.lastBalUser = state.userId; state.lastBal = bal;
+      const drv = state.role === 'entregador';
+      const de = document.getElementById('driver-earnings-total'); if (de) de.textContent = brl(bal);
+      document.getElementById('wallet-amt').textContent = brl(myBal());
+      b.classList.toggle('bg-amber-300', drv); b.classList.toggle('bg-white/95', !drv);
+      const m = document.getElementById('mkt-bal'); if (m) m.textContent = brl(myBal());
+      if (!document.getElementById('wallet-modal').classList.contains('hidden')) renderWallet();
+    }
+    function openWallet() { document.getElementById('wallet-modal').classList.remove('hidden'); renderWallet(); }
+    function renderWallet() {
+      const drv = state.role === 'entregador';
+      document.getElementById('wallet-body').innerHTML = `<p class="text-[11px] font-extrabold uppercase text-gray-500">${drv ? 'Saldo do entregador' : 'Meu saldo'}</p>
+        <p class="text-3xl font-extrabold text-forest-dark my-2">${brl(myBal())}</p>
+        ${drv ? `<div class="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-xs text-left"><p>Ganhos de hoje: <b>${brl(state.earnToday || 0)}</b></p><p class="text-gray-500 mt-1">Você recebe o valor do frete já descontada a taxa do app, direto no saldo.</p></div>`
+        : `<button onclick="walletAdd10()" class="w-full py-3 rounded-2xl bg-forest-dark text-white font-extrabold text-sm">+ R$ 10,00 (saldo fictício)</button><p class="text-[10px] text-gray-500 mt-2">Toque quantas vezes quiser para adicionar de 10 em 10 reais. Saldo de demonstração.</p>`}
+        <button onclick="document.getElementById('wallet-modal').classList.add('hidden')" class="mt-3 w-full py-2 rounded-2xl bg-gray-100 font-bold text-sm">Fechar</button>`;
+    }
+    function walletAdd10() { if (state.userId && state.role !== 'entregador') DB.inc('wallets/' + state.userId, 10, baseFor(state.userId)); }
+
+    function mktInit() {
+      DB.on('wallets', () => { updateWalletUI(); if (!document.getElementById('admin-dash').classList.contains('hidden')) renderAdmin(); });
+      setInterval(updateWalletUI, 2000);
+      const reAdm = () => { if (!document.getElementById('admin-dash').classList.contains('hidden')) renderAdmin(); };
+      DB.on('config', reAdm); DB.on('payouts', reAdm); DB.on('users', () => {});
+      setInterval(() => { if (state.isAdmin) checkPayout(); }, 30000);
+      state.mktSeen = {};
+      let first = true;
+      DB.on('orders', os => {
+        Object.values(os).forEach(o => {
+          if (state.mktSeen[o.id + o.status]) return;
+          if (first || Date.now() - (o.upd || o.ts) > 60000) { state.mktSeen[o.id + o.status] = 1; return; }
+          state.mktSeen[o.id + o.status] = 1;
+          if (o.sellerId === state.userId && o.status === 'pedido') pushNotif(`🛒 ${o.buyer} já pagou ${brl(o.total)} por ${o.qty} rasa(s)${o.delivery && o.delivery.mode === 'porto' ? ' (entrega por barco no ' + o.delivery.port.split('(')[0].trim() + ')' : ''}. Aceite para receber o valor.`, false);
+          if (o.buyerId === state.userId && o.status === 'concluido') { pushNotif(`✅ Compra confirmada: ${o.qty} rasa(s) de ${o.seller}. Veja a nota em "Minhas compras".`); if (o.delivery && o.delivery.mode === 'porto') startDelivery(o); else if (marketOpen()) showReceipt(o); }
+          if (o.buyerId === state.userId && o.status === 'recusado') pushNotif(`❌ ${o.seller} recusou seu pedido.`);
+        });
+        first = false; updateMarketBadge(); if (marketOpen()) renderMarket();
+      });
+      DB.on('listings', () => { if (!document.getElementById('market').classList.contains('hidden')) renderMarket(); });
+      DB.on('feed', () => { if (!document.getElementById('market').classList.contains('hidden')) renderMarket(); });
+      DB.on('ledger', v => { lsSet(LEDGER_KEY, Object.values(v).sort((a, b) => a.ts - b.ts)); if (!document.getElementById('admin-dash').classList.contains('hidden')) renderAdmin(); });
+      setInterval(mktTick, 15000);
+      setInterval(() => { if (state.isAdmin) botTrade(); }, 45000); // mercado vivo: bots negociam entre si no aparelho do ADM
+    }
+    const marketOpen = () => !document.getElementById('market').classList.contains('hidden');
+
+    // ======================================================================
+    // SOM + VIBRAÇÃO (estilo chamada de corrida do 99)
+    // O navegador não consegue ler o volume nem a chave de silencioso do aparelho:
+    // por isso o som e a vibração disparam juntos. No silencioso o sistema muta o som
+    // e a vibração continua (Android); com volume alto o som toca.
+    // ======================================================================
+    const Alerts = (() => {
+      let ctx = null, master = null, busy = 0;
+      const unlock = () => {
+        try {
+          if (!ctx) {
+            ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const comp = ctx.createDynamicsCompressor(); master = ctx.createGain(); master.gain.value = 1;
+            master.connect(comp); comp.connect(ctx.destination);
+          }
+          if (ctx.state !== 'running') ctx.resume();
+        } catch (e) { /* sem áudio */ }
+      };
+      ['pointerdown', 'touchstart', 'touchend', 'keydown', 'click'].forEach(ev => window.addEventListener(ev, unlock, { passive: true }));
+      const ready = () => !!ctx && ctx.state === 'running';
+      function note(freq, t, dur, vol) {
+        [[1, 'triangle', 1], [2, 'sine', .35]].forEach(([mul, type, amp]) => {
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.type = type; o.frequency.value = freq * mul;
+          g.gain.setValueAtTime(0.0001, t);
+          g.gain.exponentialRampToValueAtTime(vol * amp, t + 0.012);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+          o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.05);
+        });
+      }
+      // agenda sem sobrepor outro som que ainda esteja tocando
+      function play(len, fn) {
+        unlock(); if (!ctx || !master) return;
+        const now = ctx.currentTime; if (busy > now + 5) return;
+        const t0 = Math.max(now + 0.03, busy); busy = t0 + len; fn(t0);
+      }
+      // chamada de corrida: arpejo ascendente brilhante, tocado duas vezes
+      const ride = () => play(1.75, t0 => { const seq = [988, 1319, 1661, 1976]; [0, 0.78].forEach(off => seq.forEach((f, i) => note(f, t0 + off + i * 0.115, i === 3 ? 0.42 : 0.2, i === 3 ? 0.6 : 0.46))); });
+      // dinheiro no caixa: "ka-ching" curto e agudo
+      const cash = () => play(0.75, t0 => { note(1319, t0, 0.16, 0.5); note(1976, t0 + 0.09, 0.5, 0.6); note(2637, t0 + 0.2, 0.4, 0.4); });
+      // radar aberto: dois toques curtos subindo
+      const radar = () => play(0.6, t0 => { note(784, t0, 0.18, 0.5); note(1175, t0 + 0.14, 0.3, 0.55); });
+      const buzz = p => { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) { /* iOS não suporta */ } };
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') unlock(); });
+      return {
+        ready, resume: unlock,
+        notify() { buzz([220, 90, 220, 90, 420]); ride(); },
+        cash() { buzz([90, 60, 90]); cash(); },
+        radar() { buzz([120, 60, 200]); radar(); },
+        test() { unlock(); this.notify(); showToast(ready() ? 'Som e vibração disparados. Sem ouvir? Aumente o volume do aparelho.' : 'Toque de novo na tela para liberar o áudio do navegador.', 'fa-bell'); }
+      };
+    })();
+    function pushNotif(text, counts) {
+      Alerts.notify();
+      (state.notifs = state.notifs || []).unshift({ ts: Date.now(), text }); state.notifs.length = Math.min(state.notifs.length, 20);
+      if (counts !== false) state.unread = (state.unread || 0) + 1;
+      updateMarketBadge(); if (marketOpen()) renderMarket();
+    }
+    function updateMarketBadge() {
+      const b = document.getElementById('market-badge'); if (!b) return;
+      const pend = Object.values(DB.get('orders')).filter(o => o.sellerId === state.userId && o.status === 'pedido').length;
+      const n = pend + (state.unread || 0);
+      b.textContent = n > 9 ? '9+' : n; b.classList.toggle('hidden', !n); b.classList.toggle('flex', !!n);
+    }
+    function declineOrder(id) { const o = DB.get('orders')[id]; if (o && o.status === 'pedido') { DB.set('orders/' + id, Object.assign({}, o, { status: 'recusado', upd: Date.now() })); if (!String(o.buyerId).startsWith('bot_')) DB.inc('wallets/' + o.buyerId, +(o.total + (o.freight || 0)).toFixed(2), baseFor(o.buyerId)); feedAdd(`${o.seller} recusou o pedido de ${o.buyer}`); } }
+    function openMarket() { state.unread = 0; updateMarketBadge(); document.getElementById('market').classList.remove('hidden'); renderMarket(); }
+    function closeMarket() { document.getElementById('market').classList.add('hidden'); }
+
+    function renderMarket() {
+      const me = state.userId, ls = allListings();
+      const os = Object.values(DB.get('orders')).sort((a, b) => b.ts - a.ts), feed = Object.values(DB.get('feed')).sort((a, b) => b.ts - a.ts).slice(0, 6);
+      const recv = os.filter(o => o.sellerId === me).slice(0, 6), mine = os.filter(o => o.buyerId === me).slice(0, 5);
+      const pend = os.filter(o => o.sellerId === me && o.status === 'pedido');
+      const notifBlock = `<div class="mb-3 rounded-2xl border-2 ${pend.length ? 'border-amber-400 bg-amber-50' : 'border-gray-100 bg-white'} p-3"><h3 class="text-sm font-extrabold">🔔 Notificações${pend.length ? ' (' + pend.length + ' pedido(s) novo(s))' : ''}</h3>${pend.map(o => `<div class="flex items-center justify-between gap-2 text-xs py-1.5 border-b border-amber-200"><span><b>${o.buyer}</b> quer ${o.qty} rasa(s) • ${brl(o.total)} • ${MKT_PAY[o.method][0]}</span><span class="flex gap-1 shrink-0"><button onclick="acceptOrder('${o.id}')" class="px-2 py-1 rounded-lg bg-forest-dark text-white font-bold">Aceitar</button><button onclick="declineOrder('${o.id}')" class="px-2 py-1 rounded-lg bg-gray-200 font-bold">Recusar</button></span></div>`).join('')}${(state.notifs || []).slice(0, 4).map(n => `<p class="text-[11px] text-gray-600 py-0.5">• ${n.text}</p>`).join('') || (pend.length ? '' : '<p class="text-[11px] text-gray-400">Sem notificações.</p>')}</div>`;
+      const card = l => `<div class="bg-white rounded-2xl p-3 shadow-sm border border-gray-100"><div class="flex justify-between"><b class="text-sm">${l.seller}${l.bot ? '' : ' <span class="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">👤 pessoa real</span>'}</b><span class="text-[11px]">⭐ ${l.rating || 'novo'}</span></div><p class="text-[11px] text-gray-500">${l.origin} • ${l.stock} rasas</p><div class="flex flex-wrap gap-1 my-1.5">${chip('Grão ' + l.grain, 'bg-amber-100 text-amber-800')}${chip(l.quality, 'bg-emerald-100 text-emerald-800')}${chip(l.maturity, 'bg-lime-100 text-lime-800')}${chip(l.color, 'bg-purple-100 text-purple-800')}</div><div class="flex items-center justify-between"><p class="text-lg font-extrabold text-forest-dark">${brl(l.price)}<span class="text-[10px] text-gray-500"> /rasa</span></p>${l.sellerId === me ? `<button onclick="delListing('${l.id}')" class="text-xs text-red-500 font-bold">Remover</button>` : `<button onclick="mktBuy('${l.id}')" class="px-4 py-2 rounded-xl bg-forest-dark text-white text-xs font-extrabold">Comprar</button>`}</div></div>`;
+      const row = (o, seller) => `<div class="flex items-center justify-between text-xs py-1.5 border-b border-gray-100"><span>${seller ? o.buyer : o.seller} • ${o.qty} rasa(s) • ${brl(o.total)} • ${MKT_PAY[o.method][0]}${o.delivery && o.delivery.mode === 'porto' ? ' • 🚤 ' + o.delivery.port.split('(')[0].trim() + (o.delivery.status === 'entregue' ? ' ✓' : '') : ''}</span>${o.status === 'pedido' ? (seller ? `<button onclick="acceptOrder('${o.id}')" class="px-3 py-1 rounded-lg bg-forest-dark text-white font-bold">Aceitar</button>` : '<i>aguardando</i>') : o.status === 'recusado' ? '<i class="text-red-500">recusado</i>' : `<button onclick="showReceipt(DB.get('orders')['${o.id}'])" class="underline text-acai-dark font-bold">Nota</button>`}</div>`;
+      const inp = 'px-2 py-2 rounded-xl border border-gray-200 text-xs w-full';
+      document.getElementById('market-body').innerHTML = `
+        <div class="flex items-center justify-between mb-2"><div><p class="text-[10px] uppercase font-extrabold text-acai-dark">Marketplace</p><h2 class="text-xl font-extrabold">Comércio do Açaí Local</h2></div><div class="flex gap-1.5"><button onclick="Alerts.test()" title="Testar som e vibração" class="px-3 py-2 rounded-xl bg-amber-100 text-xs font-bold">🔔</button><button onclick="closeMarket()" class="px-3 py-2 rounded-xl bg-gray-100 text-xs font-bold">Fechar</button></div></div>
+        <p class="text-xs font-extrabold text-forest-dark mb-1">💰 Seu saldo: <span id="mkt-bal">${brl(myBal())}</span></p>
+        <p class="text-[10px] text-gray-500 mb-2">${DB.live() ? '🟢 Tempo real — todos os aparelhos conectados' : '🟡 Conectando à rede…'} • Preços de referência: rasa ≈ R$ 100 na safra</p>
+        ${notifBlock}
+        <div class="grid grid-cols-2 gap-2 mb-3"><button onclick="simulateBuy()" class="py-2.5 rounded-2xl bg-acai-dark text-white text-xs font-extrabold">🤖 Pedido de bot (aceitar)</button><button onclick="simulateSell()" class="py-2.5 rounded-2xl bg-amber-400 text-black text-xs font-extrabold">🤖 Simular venda (receber)</button></div>
+        <div class="mkt-grid grid grid-cols-1 gap-2">${ls.map(card).join('')}</div>
+        <h3 class="sell-block mt-4 mb-1 text-sm font-extrabold">Vender meu açaí</h3>
+        <div class="sell-block bg-white rounded-2xl p-3 border border-gray-100 space-y-2"><div class="grid grid-cols-2 gap-2"><input id="sl-price" placeholder="Preço/rasa R$" value="95" class="${inp}"/><input id="sl-qty" placeholder="Rasas" value="10" class="${inp}"/><select id="sl-grain" class="${inp}">${opts(GRAINS)}</select><select id="sl-qual" class="${inp}">${opts(QUALS)}</select><select id="sl-mat" class="${inp}">${opts(['Maduro', 'De vez'])}</select><select id="sl-color" class="${inp}">${opts(['Preto (roxo)', 'Branco (tinga)'])}</select></div><button onclick="publishListing()" class="w-full py-2.5 rounded-xl bg-forest-dark text-white text-xs font-extrabold">Anunciar</button></div>
+        <h3 class="mt-4 mb-1 text-sm font-extrabold">Pedidos recebidos</h3><div>${recv.map(o => row(o, true)).join('') || '<p class="text-xs text-gray-400">Nenhum pedido ainda.</p>'}</div>
+        <h3 class="mt-3 mb-1 text-sm font-extrabold">Minhas compras</h3><div>${mine.map(o => row(o, false)).join('') || '<p class="text-xs text-gray-400">Nenhuma compra ainda.</p>'}</div>
+        <h3 class="mt-3 mb-1 text-sm font-extrabold">Ao vivo</h3><div class="text-[11px] text-gray-600 space-y-1">${feed.map(f => `<p>• ${f.text}</p>`).join('') || '<p>Sem atividade.</p>'}</div>`;
+      hideSellForBuyers();
+    }
+    function hideSellForBuyers() { if (state.accountType === 'comprador') document.querySelectorAll('#market-body .sell-block').forEach(e => e.remove()); }
+    function publishListing() {
+      const g = id => document.getElementById(id).value, id = 'l' + Date.now();
+      const price = parseBRL(g('sl-price')), stock = parseInt(g('sl-qty'));
+      if (price <= 0 || !(stock > 0)) return showToast('Informe preço e quantidade.', 'fa-triangle-exclamation');
+      DB.set('listings/' + id, { id, sellerId: state.userId, seller: state.userName, origin: 'Barcarena', rating: 0, grain: g('sl-grain'), quality: g('sl-qual'), maturity: g('sl-mat'), color: g('sl-color'), price, stock, max: stock });
+      feedAdd(`${state.userName} anunciou ${stock} rasas a ${brl(price)}`); showToast('Anúncio publicado!', 'fa-store');
+    }
+    function delListing(id) { DB.set('listings/' + id, null); }
+
+    function mktBuy(id, qty, disc) {
+      const l = allListings().find(x => x.id === id); if (!l) return;
+      state.mkt = { l, qty: qty || 1, disc: disc || 0, method: 'pix', mode: 'retirada', port: 'portocentral', boat: BOT_BOATS[Math.floor(Math.random() * BOT_BOATS.length)] }; renderBuy(); document.getElementById('mkt-modal').classList.remove('hidden');
+    }
+    // ---------- ENTREGA NO PORTO (estilo iFood) ----------
+    const PORTS = ['portocentral', 'viladoconde', 'arapari', 'trambioca']; // portos e trapiches de Barcarena
+    const BOT_BOATS = [['B/M Rio Pará II', 'Mestre Raimundo'], ['B/M Estrela do Arapari', 'Mestre Cabano'], ['B/M Dona Socorro', 'Seu Benedito'], ['B/M Ilha das Onças', 'Mestre Lucas'], ['B/M Açaí Forte I', 'Capitão Zé Maria']];
+    const ORIGIN_KEYS = [['onças', 'oncas'], ['trambioca', 'trambioca'], ['cafezal', 'cafezal'], ['arapari', 'saopedro'], ['barcarena', 'saopedro']];
+    const originKeyFor = l => { const o = (l.origin || '').toLowerCase(), f = ORIGIN_KEYS.find(([k]) => o.includes(k)); return f ? f[1] : 'cafezal'; };
+    const kmFallback = (a, b) => a === b ? 2.5 : (b === 'viladoconde' ? 14.2 : (a === 'oncas' ? 11.4 : 8.5));
+    function deliveryQuote(l, qty, portKey) { // mesmo cálculo do frete normal dos barcos
+      const originKey = originKeyFor(l), r = getRiverRoute(originKey, portKey), km = r ? r.km : kmFallback(originKey, portKey);
+      return { originKey, portKey, km, real: !!r, freight: Math.round(45 + km * 6.5 + qty * 0.45) };
+    }
+    const distKm = (a, b) => { const R = 6371, t = x => x * Math.PI / 180, dLa = t(b[0] - a[0]), dLo = t(b[1] - a[1]); const h = Math.sin(dLa / 2) ** 2 + Math.cos(t(a[0])) * Math.cos(t(b[0])) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+    function mktMode(m) { state.mkt.mode = m; renderBuy(); }
+    function mktPort(k) { state.mkt.port = k; renderBuy(); }
+    function mktLocate() { // compartilhar localização: escolhe o porto de Barcarena mais próximo
+      if (!navigator.geolocation) return showToast('Localização indisponível. Escolha o porto na lista.', 'fa-location-crosshairs');
+      navigator.geolocation.getCurrentPosition(pos => {
+        if (!state.mkt) return;
+        const me = [pos.coords.latitude, pos.coords.longitude]; let best = null, bd = Infinity;
+        PORTS.forEach(k => { const d = distKm(me, LOCATIONS[k].coords); if (d < bd) { bd = d; best = k; } });
+        if (bd > 40) return showToast('Você parece estar longe de Barcarena. Escolha o porto na lista.', 'fa-location-crosshairs');
+        state.mkt.port = best; renderBuy(); showToast(`Porto mais próximo: ${LOCATIONS[best].name}`, 'fa-location-dot');
+      }, () => showToast('Não consegui sua localização. Escolha o porto na lista.', 'fa-location-crosshairs'), { enableHighAccuracy: true, timeout: 8000 });
+    }
+    function renderBuy() {
+      const { l, qty, disc } = state.mkt, mode = state.mkt.mode || 'retirada', delivery = mode === 'porto';
+      const method = delivery ? 'pix' : state.mkt.method; state.mkt.method = method; // entrega: pagamento via Pix
+      const item = +(l.price * qty * (1 - disc)).toFixed(2), q = delivery ? deliveryQuote(l, qty, state.mkt.port) : null;
+      const freight = q ? q.freight : 0, total = +(item + freight).toFixed(2), [boat, skipper] = state.mkt.boat;
+      const seg = (on, fn, a, b) => `<button onclick="${fn}" class="py-2.5 rounded-xl border-2 text-xs font-extrabold leading-tight ${on ? 'border-acai-dark bg-purple-50 text-acai-dark' : 'border-gray-200'}">${a}<span class="block text-[10px] font-bold opacity-70">${b}</span></button>`;
+      document.getElementById('mkt-modal-body').innerHTML = `<h3 class="font-extrabold">${l.seller}</h3><p class="text-[11px] text-gray-500">${l.origin} • ${l.grain} • ${l.quality} • ${l.maturity} • ${l.color}</p>
+        ${disc ? `<p class="text-xs font-bold text-green-700 mt-1">🤖 Oferta do bot: ${Math.round(disc * 100)}% de desconto</p>` : ''}
+        <div class="flex items-center justify-center gap-4 my-3"><button onclick="mktQty(-1)" class="w-9 h-9 rounded-full bg-gray-100 font-extrabold">−</button><b class="text-lg">${qty} rasa(s)</b><button onclick="mktQty(1)" class="w-9 h-9 rounded-full bg-gray-100 font-extrabold">+</button></div>
+        <p class="text-[11px] font-extrabold uppercase text-gray-500 mb-1">Como receber</p>
+        <div class="grid grid-cols-2 gap-2">${seg(!delivery, "mktMode('retirada')", '🏪 Retirada', 'Taxa R$ 0,00')}${seg(delivery, "mktMode('porto')", '🚤 Entrega no porto', 'Frete pelo rio')}</div>
+        ${delivery ? `<div class="mt-2 space-y-2">
+          <label class="block text-[10px] font-bold uppercase text-gray-400">Em qual porto de Barcarena você está?</label>
+          <select onchange="mktPort(this.value)" class="w-full px-3 py-2 rounded-xl border border-gray-200 text-xs font-bold">${PORTS.map(k => `<option value="${k}" ${k === state.mkt.port ? 'selected' : ''}>${LOCATIONS[k].name}</option>`).join('')}</select>
+          <button onclick="mktLocate()" class="text-[11px] font-bold text-acai-dark underline">📍 Compartilhar minha localização</button>
+          <div class="bg-sky-50 border border-sky-200 rounded-2xl p-3 text-xs space-y-0.5">
+            <p>🚤 <b>${boat}</b> 🤖</p><p>Barqueiro: <b>${skipper}</b></p><p>Carga: <b>${qty} rasa(s)</b> (${qty * 14} kg)</p>
+            <p>Rota: ${LOCATIONS[q.originKey].name.split('(')[0]}➔ ${LOCATIONS[q.portKey].name.split('(')[0]}</p>
+            <p>Distância pelo rio: <b>${kmFmt(q.km)} km</b>${q.real ? '' : ' (estimada)'} • chega em ~15 s</p>
+            <p class="text-sm font-extrabold text-sky-900">Frete: ${brl(q.freight)}</p></div></div>`
+        : `<p class="text-[11px] text-gray-500 mt-1.5">Você retira em ${l.origin}. Sem taxa de entrega.</p>`}
+        <p class="text-[11px] font-extrabold uppercase text-gray-500 mt-3 mb-1">Pagamento ${delivery ? '(entrega só via Pix)' : ''}</p>
+        <div class="grid grid-cols-2 gap-2">${Object.keys(MKT_PAY).map(k => `<button onclick="mktPay('${k}')" class="py-2 rounded-xl border-2 text-xs font-extrabold ${k === method ? 'border-acai-dark bg-purple-50 text-acai-dark' : 'border-gray-200'} ${delivery && k !== 'pix' ? 'opacity-30 pointer-events-none' : ''}">${MKT_PAY[k][0]}</button>`).join('')}</div>
+        <p class="text-[10px] text-gray-500 mt-2">${method === 'pix' ? 'Pix (demonstração): 00020126rotacai.demo.pix' : method === 'dinheiro' ? 'Pagamento em dinheiro na entrega.' : 'Pagamento simulado, sem cobrança real.'}</p>
+        <div class="text-right text-xs text-gray-500 mt-2"><p>Açaí: ${brl(item)}</p><p>${delivery ? 'Frete: ' + brl(freight) : 'Retirada: R$ 0,00'}</p></div>
+        <p class="text-right text-xl font-extrabold">${brl(total)}</p>
+        <div class="grid grid-cols-2 gap-2 mt-3"><button onclick="document.getElementById('mkt-modal').classList.add('hidden')" class="py-2.5 rounded-xl bg-gray-100 font-bold text-sm">Cancelar</button><button onclick="mktConfirm()" class="py-2.5 rounded-xl bg-forest-dark text-white font-extrabold text-sm">${delivery ? 'Pagar com Pix' : 'Confirmar compra'}</button></div>`;
+    }
+    function mktQty(d) { state.mkt.qty = Math.max(1, Math.min(state.mkt.l.stock, state.mkt.qty + d)); renderBuy(); }
+    function mktPay(m) { state.mkt.method = m; renderBuy(); }
+    function newOrder(l, qty, disc, method, buyerId, buyer, delivery) {
+      return { id: 'o' + Date.now() + Math.floor(Math.random() * 999), listingId: l.id, sellerId: l.sellerId, seller: l.seller, buyerId, buyer, qty, unit: l.price, disc, total: +(l.price * qty * (1 - disc)).toFixed(2), method, status: 'pedido', freight: (delivery || {}).freight || 0, delivery: delivery || { mode: 'retirada', freight: 0 }, ts: Date.now(), item: { grain: l.grain, quality: l.quality, maturity: l.maturity, color: l.color, origin: l.origin } };
+    }
+    function mktConfirm() {
+      const { l, qty, disc } = state.mkt, porto = state.mkt.mode === 'porto';
+      let delivery = { mode: 'retirada', freight: 0 };
+      if (porto) {
+        const q = deliveryQuote(l, qty, state.mkt.port), [boat, skipper] = state.mkt.boat;
+        delivery = { mode: 'porto', portKey: q.portKey, port: LOCATIONS[q.portKey].name, originKey: q.originKey, origin: LOCATIONS[q.originKey].name, km: +q.km.toFixed(1), freight: q.freight, boat, skipper, status: 'aguardando' };
+      }
+      const o = newOrder(l, qty, disc, porto ? 'pix' : state.mkt.method, state.userId, state.userName, delivery), due = +(o.total + o.freight).toFixed(2);
+      if (myBal() < due) { showToast('Saldo insuficiente. Adicione saldo fictício.', 'fa-wallet'); openWallet(); return; }
+      document.getElementById('mkt-modal').classList.add('hidden');
+      DB.inc('wallets/' + state.userId, -due, baseFor(state.userId)); // comprador paga na hora (açaí + frete)
+      DB.set('orders/' + o.id, o); feedAdd(`${state.userName} pediu ${qty} rasa(s) de ${l.seller}${porto ? ' com entrega no ' + delivery.port.split('(')[0] : ''}`);
+      if (l.bot) { setTimeout(() => completeOrder(o), 1500); if (porto) showToast('Pix confirmado! Chamando o barco para a entrega…', 'fa-ship'); }
+      else showToast(porto ? 'Pix pago! O barco sai assim que o vendedor aceitar o pedido.' : 'Pagamento feito! O valor é repassado ao vendedor quando ele aceitar o pedido.', 'fa-paper-plane');
+    }
+    // barco-robô leva o açaí até o porto, acompanhado no mapa pelo leito do rio (15 s)
+    function startDelivery(o) {
+      const d = o.delivery; state.deliveries = state.deliveries || {};
+      if (!d || d.mode !== 'porto' || state.deliveries[o.id]) return;
+      if (state.activeRide) return void setTimeout(() => startDelivery(o), 5000);
+      state.deliveries[o.id] = 1;
+      state.activeRide = { id: 'del_' + o.id, kind: 'delivery', orderId: o.id, status: 'accepted', originKey: d.originKey, destKey: d.portKey, originName: d.origin, destName: d.port, paneiros: o.qty, qty: o.qty, price: brl(d.freight), duration: 15000, boat: d.boat, skipper: d.skipper };
+      closeMarket(); document.getElementById('receipt').classList.add('hidden');
+      navigateTo('main'); updateActiveRideUI(); refreshMainBottomPanel(); startBoatNavigationAnimation();
+      showToast(`🚤 ${d.boat} saiu para o ${d.port.split('(')[0].trim()}! Chega em ~15 s.`, 'fa-ship');
+    }
+    function finishDelivery(ride) {
+      clearInterval(state.navInterval);
+      const o = DB.get('orders')[ride.orderId];
+      if (o) DB.set('orders/' + o.id, Object.assign({}, o, { delivery: Object.assign({}, o.delivery, { status: 'entregue' }), upd: Date.now() }));
+      state.activeRide = null; document.getElementById('sidebar-ride-label').textContent = 'Livre'; refreshMainBottomPanel();
+      Alerts.notify(); showToast(`📦 Sua entrega chegou ao ${ride.destName.split('(')[0].trim()}!`, 'fa-anchor');
+      document.getElementById('rating-route-summary').textContent = `${ride.originName.split('(')[0].trim()} ➔ ${ride.destName.split('(')[0].trim()}`;
+      document.getElementById('rating-partner-name').textContent = `${ride.skipper} • ${ride.boat} 🤖`;
+      document.getElementById('rating-modal').classList.remove('hidden'); // avaliação da entrega
+    }
+    function acceptOrder(id) { const o = DB.get('orders')[id]; if (o && o.status === 'pedido') completeOrder(o); }
+    function completeOrder(o) {
+      o = Object.assign({}, o, { status: 'concluido', upd: Date.now() });
+      const fee = Math.min(3.5, o.total); // taxa fixa fictícia de R$ 3,50 por venda
+      const bl = BOT_LISTINGS.find(x => x.id === o.listingId);
+      if (bl) bl.stock = Math.max(0, bl.stock - o.qty);
+      else { const hl = DB.get('listings')[o.listingId]; if (hl) DB.set('listings/' + hl.id, Object.assign({}, hl, { stock: Math.max(0, hl.stock - o.qty) })); }
+      DB.set('orders/' + o.id, o);
+      if (o.freight) { // taxa do app sobre o frete da entrega; o restante é do barqueiro-robô
+        const ff = calcFee(o.freight); DB.inc('wallets/admin', ff, ADMIN_BASE);
+        recordTx({ id: o.id + 'f', ts: Date.now(), kind: 'viagem', gross: o.freight, fee: ff, method: 'pix', client: o.buyer, driver: o.delivery.boat + ' • ' + o.delivery.skipper, route: `Entrega: ${o.delivery.origin} ➔ ${o.delivery.port}` });
+      }
+      const net = +(o.total - fee).toFixed(2);
+      if (!String(o.sellerId).startsWith('bot_')) DB.inc('wallets/' + o.sellerId, net, baseFor(o.sellerId)); // vendedor recebe sem a taxa
+      DB.inc('wallets/admin', fee, ADMIN_BASE);                                                      // taxa vai para o ADM
+      if (o.sellerId === state.userId) pushNotif(`💰 ${o.buyer} pagou ${brl(o.total)} (${MKT_PAY[o.method][0]}). Você recebeu +${brl(net)} no saldo (taxa do app ${brl(fee)}).`, false);
+      recordTx({ id: o.id, ts: Date.now(), kind: 'venda', gross: o.total, fee, method: o.method, client: o.buyer, driver: o.seller, route: `${o.qty} rasa(s) • ${o.item.color}` });
+      feedAdd(`${o.buyer} comprou ${o.qty} rasa(s) de ${o.seller} (${MKT_PAY[o.method][0]}) — ${brl(o.total)}`);
+      if (o.sellerId === state.userId) showReceipt(o);
+    }
+    function showReceipt(o) {
+      if (!o) return;
+      document.getElementById('receipt-body').innerHTML = `<p class="text-center font-extrabold text-sm">ROTAÇAÍ • COMÉRCIO DO AÇAÍ</p><p class="text-center">NOTA DE COMPRA Nº ${o.id.slice(-8)}</p><p class="text-center">${new Date(o.ts).toLocaleString('pt-BR')}</p><hr class="my-2 border-dashed">
+        <p>Comprador: ${o.buyer}</p><p>Vendedor: ${o.seller}</p><p>Origem: ${o.item.origin}</p><hr class="my-2 border-dashed">
+        <p>Produto: Açaí em fruto (rasa)</p><p>Grão: ${o.item.grain} • Qualidade: ${o.item.quality}</p><p>Maturação: ${o.item.maturity} • Cor: ${o.item.color}</p>
+        <p>Quantidade: ${o.qty} rasa(s)</p><p>Valor unitário: ${brl(o.unit)}</p>${o.disc ? `<p>Desconto: ${Math.round(o.disc * 100)}%</p>` : ''}<hr class="my-2 border-dashed">
+        ${o.delivery && o.delivery.mode === 'porto' ? `<p>Entrega: ${o.delivery.port}</p><p>Barco: ${o.delivery.boat} • ${o.delivery.skipper} 🤖</p><p>Frete (${kmFmt(o.delivery.km)} km): ${brl(o.freight)}</p>` : '<p>Retirada no local • Taxa R$ 0,00</p>'}<p class="text-sm font-extrabold">TOTAL: ${brl(o.total + (o.freight || 0))}</p><p>Pagamento: ${MKT_PAY[o.method][0]}</p><p class="mt-2 text-[10px] text-gray-500">Documento de demonstração, sem valor fiscal.</p>
+        <div class="grid grid-cols-2 gap-2 mt-3 no-print"><button onclick="window.print()" class="py-2 rounded-xl bg-forest-dark text-white font-bold">Imprimir / PDF</button><button onclick="document.getElementById('receipt').classList.add('hidden')" class="py-2 rounded-xl bg-gray-100 font-bold">Fechar</button></div>`;
+      document.getElementById('receipt').classList.remove('hidden');
+    }
+
+    // ---- bots ----
+    const pickBuyer = () => BOT_BUYERS[Math.floor(Math.random() * BOT_BUYERS.length)];
+    const rndPay = () => Object.keys(MKT_PAY)[Math.floor(Math.random() * 4)];
+    function simulateBuy() { // um bot compra de você (ou de um vendedor bot, se você não tem anúncio)
+      const mine = allListings().filter(l => l.sellerId === state.userId), buyer = pickBuyer(), bid = 'bot_b' + Math.floor(Math.random() * 99);
+      if (mine.length) {
+        const l = mine[0], qty = Math.max(1, Math.min(l.stock, 1 + Math.floor(Math.random() * 4))), disc = qty >= 3 ? .05 : 0; // bot pede desconto em volume
+        const o = newOrder(l, qty, disc, rndPay(), bid, buyer); DB.set('orders/' + o.id, o);
+      } else botTrade(buyer);
+    }
+    function botTrade(buyer) {
+      const l = BOT_LISTINGS.filter(x => x.stock > 0).sort((a, b) => botScore(b) - botScore(a))[Math.floor(Math.random() * 3)];
+      if (!l) return;
+      const o = newOrder(l, Math.min(l.stock, 1 + Math.floor(Math.random() * 5)), 0, rndPay(), 'bot_b' + Math.floor(Math.random() * 99), buyer || pickBuyer());
+      DB.set('orders/' + o.id, o); completeOrder(o);
+      showToast(`🤖 ${o.buyer} comprou ${o.qty} rasa(s) de ${o.seller}`, 'fa-handshake');
+    }
+    function simulateSell() { // VENDA SIMULADA: um bot compra o que EU anunciei, paga e o valor cai no MEU saldo
+      if (state.accountType === 'comprador') return showToast('Conta de cliente não vende. Entre como comerciante ou produtor.', 'fa-store');
+      const mine = allListings().filter(l => l.sellerId === state.userId);
+      if (!mine.length) {
+        showToast('Anuncie uma mercadoria primeiro em "Vender meu açaí".', 'fa-store');
+        const sb = document.querySelector('#market-body .sell-block'); if (sb) sb.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      const l = mine[Math.floor(Math.random() * mine.length)], buyer = pickBuyer();
+      const qty = Math.max(1, Math.min(l.stock, 1 + Math.floor(Math.random() * 3)));
+      const o = newOrder(l, qty, 0, rndPay(), 'bot_b' + Math.floor(Math.random() * 99), buyer);
+      DB.set('orders/' + o.id, o);
+      showToast(`🤖 ${buyer} está pagando ${brl(o.total)}…`, 'fa-hourglass-half');
+      setTimeout(() => completeOrder(o), 1400); // o bot paga; você só recebe (nada é debitado de você)
+    }
+
+    function initMqtt() {
+      try {
+        mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
+          clientId: state.clientId,
+          clean: true,
+          reconnectPeriod: 4000
+        });
+        DB.useMqtt(mqttClient);
+
+        mqttClient.on('connect', () => {
+          document.getElementById('mqtt-status-dot').className = 'w-3 h-3 rounded-full bg-green-500';
+          document.getElementById('mqtt-status-text').textContent = 'Conectado • aparelhos integrados';
+          mqttClient.subscribe(`rotacai/barcarena/${state.room}/#`);
+          mqttClient.subscribe(ADMIN_TOPIC);
+          DB.subscribe(); state.walletQuietUntil = Date.now() + 4000;
+          broadcastPresence();
+          if (state.isAdmin) publishAdmin(true);
+        });
+
+        mqttClient.on('message', (topic, payload) => {
+          if (topic.indexOf('rotacai/barcarena/db/') === 0) { DB.fromMqtt(topic, payload); return; }
+          try {
+            const msg = JSON.parse(payload.toString());
+            if (msg.senderId === state.clientId) return;
+
+            if (topic.endsWith('/presence')) {
+              state.peers[msg.senderId] = { name: msg.name, role: msg.role, radar: !!msg.radar, lastSeen: Date.now() };
+              renderPeersList();
+            } else if (topic.endsWith('/ride_request')) {
+              onRideRequest(msg);
+            } else if (topic.endsWith('/ride_accepted') || topic.endsWith('/ride_cancelled')) {
+              onRideClosed(msg, topic.endsWith('/ride_accepted'));
+            } else if (topic.endsWith('/cargo_delivered')) {
+              showToast('Carga entregue no porto!', 'fa-anchor');
+            } else if (topic.endsWith('/payment_confirmed')) {
+              const _mine = state.role === 'entregador' && (!msg.driverId || msg.driverId === state.userId);
+              if (_mine) state.earnToday = (state.earnToday || 0) + (msg.gross || 0) - (msg.fee || 0);
+              if (_mine) showToast(`💰 Pagamento recebido de ${msg.client || 'cliente'}: ${brl((msg.gross || 0) - (msg.fee || 0))} via ${msg.method} (taxa do app ${brl(msg.fee || 0)})`, 'fa-check-double');
+            } else if (topic.endsWith('/_global/admin')) {
+              onAdminMessage(msg);
+            } else if (topic.endsWith('/ad')) {
+              state.ads = msg.ads || [];
+            } else if (topic.endsWith('/ad_stats')) {
+              if (state.isAdmin) mergeAdStats(msg.b || {});
+            }
+          } catch (e) {}
+        });
+      } catch (err) {
+        document.getElementById('mqtt-status-text').textContent = 'Modo Local / Offline';
+      }
+
+      setInterval(() => {
+        broadcastPresence();
+        const now = Date.now();
+        Object.keys(state.peers).forEach(id => {
+          if (now - state.peers[id].lastSeen > 20000) delete state.peers[id];
+        });
+        renderPeersList();
+      }, 6000);
+    }
+
+    function publishMqtt(subtopic, data) {
+      if (mqttClient && mqttClient.connected) {
+        mqttClient.publish(`rotacai/barcarena/${state.room}/${subtopic}`, JSON.stringify({
+          ...data,
+          senderId: state.clientId
+        }));
+      }
+    }
+
+    function broadcastPresence() {
+      publishMqtt('presence', {
+        name: state.role === 'produtor' ? state.userName : state.boatName,
+        role: state.role,
+        radar: !!state.radarOn
+      });
+    }
+
+    function renderPeersList() {
+      const list = document.getElementById('group-peers-list');
+      const peerKeys = Object.keys(state.peers);
+      const total = peerKeys.length + 1;
+
+      document.getElementById('group-total-badge').textContent = `${total} aparelho${total > 1 ? 's' : ''} online`;
+      document.getElementById('mini-peers-pill').textContent = `${total} online`;
+      updateBoatsNearby();
+
+      let html = `
+        <div class="flex items-center justify-between text-[11px]">
+          <span class="font-bold text-gray-800"><i class="fa-solid fa-mobile-screen text-forest-dark mr-1"></i>Você (${state.role === 'produtor' ? 'Produtor' : 'Barqueiro'})</span>
+          <span class="px-1.5 py-0.2 rounded bg-forest-light text-forest-dark text-[9px] font-extrabold">Online</span>
+        </div>
+      `;
+      peerKeys.forEach(k => {
+        const p = state.peers[k];
+        html += `
+          <div class="flex items-center justify-between text-[11px] border-t border-gray-100 pt-1">
+            <span class="font-semibold text-gray-700 truncate"><i class="fa-solid fa-ship text-acai-dark mr-1"></i>${p.name}</span>
+            <span class="px-1.5 py-0.2 rounded bg-acai-light text-acai-dark text-[9px] font-extrabold">${p.role}</span>
+          </div>
+        `;
+      });
+      list.innerHTML = html;
+    }
+
+    function toggleControlPanel() {
+      const body = document.getElementById('control-sidebar-body');
+      const btn = document.getElementById('btn-toggle-sidebar');
+      body.classList.toggle('hidden');
+      btn.textContent = body.classList.contains('hidden') ? 'Mostrar' : 'Ocultar';
+    }
+
+    function showToast(msg, icon = 'fa-circle-check') {
+      const toast = document.getElementById('app-toast');
+      document.getElementById('toast-text').textContent = msg;
+      document.getElementById('toast-icon').className = `fa-solid ${icon} text-gold-soft text-base`;
+      toast.classList.remove('opacity-0', '-translate-y-2');
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => {
+        toast.classList.add('opacity-0', '-translate-y-2');
+      }, 3400);
+    }
+
+    // Relógio em Tempo Real
+    setInterval(() => {
+      const now = new Date();
+      document.getElementById('clock-display').textContent = now.toTimeString().slice(0, 5);
+    }, 1000);
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initCarousel();
+      setInterval(updateSoundBanner, 1500);
+      restoreAdminSession();
+      initMap();
+      ensureWaterMap();
+      setGreeting();
+      DB.init(); mktInit();
+      initMqtt();
+      setInterval(adLoop, 1000); setInterval(flushAdStats, 15000); setInterval(updateAdminFab, 5000);
+      updateFreightCalculation();
+    });
+  </script>
+</body>
+</html>
